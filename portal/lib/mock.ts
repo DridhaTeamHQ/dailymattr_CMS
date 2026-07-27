@@ -338,15 +338,15 @@ export const SEED_SELECTIONS: ArticleSelection[] = [
     articleId: "ns-01",
     position: 1,
     isFeatured: true,
-    selectedBy: "u-editor",
-    selectedAt: hoursAgo(2),
+    approvedBy: "u-qa",
+    approvedAt: hoursAgo(3),
   },
   {
     articleId: "ns-04",
     position: 2,
     isFeatured: false,
-    selectedBy: "u-editor",
-    selectedAt: hoursAgo(2),
+    approvedBy: "u-editor",
+    approvedAt: hoursAgo(2),
   },
 ];
 

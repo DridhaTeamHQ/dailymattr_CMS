@@ -60,15 +60,33 @@ export const getNewsStudio = (): NewsStudioArticle[] =>
   read("newsstudio", SEED_NEWSSTUDIO);
 
 // ── selections ──────────────────────────────────────────────────────
+/** Feed order is approval order: earliest approval first. */
 export const getSelections = (): ArticleSelection[] =>
   read("selections", SEED_SELECTIONS)
-    .slice()
-    .sort((a, b) => a.position - b.position);
+    .map(normalizeSelection)
+    .sort((a, b) => a.approvedAt.localeCompare(b.approvedAt))
+    .map((sel, i) => ({ ...sel, position: i + 1 }));
+
+/** Tolerates rows written before approval replaced manual selection. */
+function normalizeSelection(sel: ArticleSelection): ArticleSelection {
+  const legacy = sel as ArticleSelection & {
+    selectedAt?: string;
+    selectedBy?: string;
+  };
+  return {
+    ...sel,
+    approvedAt: sel.approvedAt ?? legacy.selectedAt ?? new Date(0).toISOString(),
+    approvedBy: sel.approvedBy ?? legacy.selectedBy ?? "",
+  };
+}
 
 export const saveSelections = (s: ArticleSelection[]) =>
   write(
     "selections",
-    s.map((sel, i) => ({ ...sel, position: i + 1 }))
+    s
+      .map(normalizeSelection)
+      .sort((a, b) => a.approvedAt.localeCompare(b.approvedAt))
+      .map((sel, i) => ({ ...sel, position: i + 1 }))
   );
 
 export function updateSelection(

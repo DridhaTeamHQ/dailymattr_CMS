@@ -74,12 +74,16 @@ export interface NewsStudioArticle {
   publishedAt: string;
 }
 
+/**
+ * A NewsStudio article approved for the app feed. Feed order is the order of
+ * approval — `position` is derived from `approvedAt`, never set by hand.
+ */
 export interface ArticleSelection {
   articleId: string;
   position: number;
   isFeatured: boolean;
-  selectedBy: string;
-  selectedAt: string;
+  approvedBy: string;
+  approvedAt: string;
   /** Editorial overrides live here — DB A (NewsStudio) is never written to. */
   titleOverride?: string | null;
   summaryOverride?: string | null;

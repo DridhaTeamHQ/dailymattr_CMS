@@ -89,6 +89,9 @@ export const useAuth = () => useContext(Ctx);
 export const can = {
   publish: (r: Role) => r === "chief_editor" || r === "super_admin",
   review: (r: Role) => r === "qa" || r === "chief_editor" || r === "super_admin",
+  /** QA approves NewsStudio articles into the app feed. */
+  approveArticles: (r: Role) =>
+    r === "qa" || r === "chief_editor" || r === "super_admin",
   curate: (r: Role) => r === "chief_editor" || r === "super_admin",
   manageUsers: (r: Role) => r === "super_admin",
   manageCategories: (r: Role) => r === "chief_editor" || r === "super_admin",

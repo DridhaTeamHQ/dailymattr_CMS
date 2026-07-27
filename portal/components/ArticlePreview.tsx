@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { RotateCcw, Sparkles, Star } from "lucide-react";
+import { Check, RotateCcw, Sparkles, Star } from "lucide-react";
 import { Modal, Pill } from "./ui";
 import { timeAgo } from "@/lib/store";
 import type { ArticleSelection, NewsStudioArticle } from "@/lib/types";
@@ -130,6 +130,9 @@ export default function ArticlePreview({
             </Pill>
             <Pill tone="muted">{article.sourceCount} sources</Pill>
             {edited && <Pill tone="violet">Edited</Pill>}
+            {selection && (
+              <Pill tone="mint">Approved · #{selection.position} in feed</Pill>
+            )}
           </div>
 
           {canEdit ? (
@@ -165,9 +168,17 @@ export default function ArticlePreview({
               <div className="mt-5 flex flex-wrap items-center gap-2">
                 <button
                   onClick={onToggleFeed}
-                  className={`px-4 py-2.5 text-xs ${inFeed ? "btn-ghost" : "btn-accent"}`}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs ${
+                    inFeed ? "btn-ghost hover:!text-rose" : "btn-accent"
+                  }`}
                 >
-                  {inFeed ? "Remove from feed" : "Add to app feed"}
+                  {inFeed ? (
+                    "Remove from feed"
+                  ) : (
+                    <>
+                      <Check size={13} strokeWidth={3} /> Approve for feed
+                    </>
+                  )}
                 </button>
                 {inFeed && (
                   <button
@@ -196,7 +207,7 @@ export default function ArticlePreview({
                 <button
                   onClick={save}
                   disabled={!inFeed}
-                  title={inFeed ? "" : "Add to the feed first"}
+                  title={inFeed ? "" : "Approve the story first"}
                   className="btn-primary ml-auto px-5 py-2.5 text-xs disabled:opacity-40"
                 >
                   {savedAt ? "Saved ✓" : "Save overrides"}
