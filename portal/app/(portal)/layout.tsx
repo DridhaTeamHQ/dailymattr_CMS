@@ -29,7 +29,7 @@ export default function PortalLayout({
   }
 
   return (
-    <div className="mx-auto flex max-w-[1440px] gap-6 p-4 md:p-6">
+    <div className="mx-auto flex max-w-[1440px] items-start gap-6 px-4 pb-4 md:px-6 md:pb-6">
       <Sidebar />
       <div className="min-w-0 flex-1">
         <Topbar />

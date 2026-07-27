@@ -101,8 +101,30 @@ export function updateSelection(
   saveSelections(all);
 }
 
-// ── content ─────────────────────────────────────────────────────────
-export const getContent = (): ContentItem[] => read("content", SEED_CONTENT);
+export const getContent = (): ContentItem[] => {
+  const items = read("content", SEED_CONTENT);
+  let updated = false;
+  const sanitized = items.map((item) => {
+    if (
+      item.mediaUrl &&
+      (item.mediaUrl.includes("commondatastorage.googleapis.com") ||
+        item.mediaUrl.includes("gtv-videos-bucket") ||
+        item.mediaUrl.includes("googlevideo.com"))
+    ) {
+      updated = true;
+      return {
+        ...item,
+        mediaUrl:
+          "https://assets.mixkit.co/videos/preview/mixkit-a-girl-blowing-a-bubble-gum-bubble-41537-large.mp4",
+      };
+    }
+    return item;
+  });
+  if (updated) {
+    write("content", sanitized);
+  }
+  return sanitized;
+};
 export const saveContent = (c: ContentItem[]) => write("content", c);
 
 export function upsertContent(item: ContentItem) {
@@ -160,7 +182,11 @@ const statusVerb = (s: ContentStatus) =>
             : "updated";
 
 // ── audit ───────────────────────────────────────────────────────────
-export const getAudit = (): AuditEntry[] => read("audit", SEED_AUDIT);
+/** Newest first — callers slice the top N and group by day. */
+export const getAudit = (): AuditEntry[] =>
+  read("audit", SEED_AUDIT)
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 export function logAudit(
   actor: CmsUser,
@@ -185,7 +211,36 @@ export function logAudit(
 export function contentByKind(kind: ContentKind): ContentItem[] {
   return getContent()
     .filter((c) => c.kind === kind)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => {
+      const timeA = new Date(a.publishedAt || a.updatedAt || a.createdAt).getTime();
+      const timeB = new Date(b.publishedAt || b.updatedAt || b.createdAt).getTime();
+      return timeB - timeA;
+    });
+}
+
+export function formatDateTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+export function formatDateOnly(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function timeAgo(iso: string): string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Bookmark,
   Image as ImageIcon,
@@ -43,18 +43,27 @@ const STATS = { likes: "1.2k", dislikes: "200", comments: 200 };
 const titleCase = (s: string) =>
   s.replace(/-/g, " ").replace(/\b\p{Ll}/gu, (c) => c.toUpperCase());
 
-/** Scales the fixed-size artwork to fill the available width. */
+/**
+ * Scales the fixed-size artwork to fill the available width.
+ *
+ * Measured synchronously before paint, then kept in step with a ResizeObserver.
+ * The layout-effect pass matters: it means the poster is never blank waiting on
+ * an observer callback, which a background tab may not deliver for a while.
+ */
 function useFit(designWidth: number) {
   const ref = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState<number | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width;
-      if (w > 0) setScale(w / designWidth);
-    });
+
+    const measure = (w: number) => {
+      if (w > 0) setScale((s) => (s === w / designWidth ? s : w / designWidth));
+    };
+
+    measure(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver(([entry]) => measure(entry.contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
   }, [designWidth]);

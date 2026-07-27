@@ -177,19 +177,6 @@ textarea:focus {
   animation: float-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-@keyframes bar-grow {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-.bar-grow {
-  transform-origin: bottom;
-  animation: bar-grow 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
