@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Rocket, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, Rocket, ShieldCheck, XCircle } from "lucide-react";
+import { Pager } from "@/components/Pager";
+import { PixFrame, PixPreviewModal } from "@/components/PixCard";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
+import { filledPixPoints } from "@/lib/pix";
 import { getContent, getUsers, setStatus, timeAgo } from "@/lib/store";
 import { useStore } from "@/lib/useStore";
 import { KIND_META, type CmsUser, type ContentItem } from "@/lib/types";
@@ -14,12 +18,17 @@ function Row({
   c,
   users,
   actions,
+  onPreview,
 }: {
   c: ContentItem;
   users: CmsUser[];
   actions: React.ReactNode;
+  onPreview?: () => void;
 }) {
   const author = users.find((u) => u.id === c.createdBy);
+  const isPix = c.kind === "pix";
+  const points = isPix ? filledPixPoints(c) : [];
+
   return (
     <motion.div
       layout
@@ -28,7 +37,11 @@ function Row({
       exit={{ opacity: 0, x: 60, transition: { duration: 0.25 } }}
       className="card flex flex-wrap items-center gap-4 p-4"
     >
-      {c.coverUrl ? (
+      {isPix ? (
+        <div className="w-[120px] shrink-0">
+          <PixFrame item={c} onClick={onPreview} />
+        </div>
+      ) : c.coverUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={c.coverUrl}
@@ -43,12 +56,37 @@ function Row({
           <Pill tone="accent">{KIND_META[c.kind].label}</Pill>
           <StatusPill status={c.status} />
         </div>
-        <p className="truncate text-[14px] font-bold">{c.title}</p>
-        <p className="mt-0.5 text-[11px] text-faint">
+        <p className={`text-[14px] font-bold ${isPix ? "" : "truncate"}`}>
+          {c.title}
+        </p>
+        {isPix && points.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {points.map((p, i) => (
+              <li
+                key={i}
+                className="flex gap-1.5 text-[12px] leading-snug text-muted"
+              >
+                <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
+                <span>{p}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-1.5 text-[11px] text-faint">
           by {author?.fullName ?? "—"} · updated {timeAgo(c.updatedAt)}
         </p>
       </div>
-      <div className="flex shrink-0 gap-2">{actions}</div>
+      <div className="flex shrink-0 gap-2">
+        {isPix && onPreview && (
+          <button
+            onClick={onPreview}
+            className="btn-ghost flex items-center gap-1.5 px-4 py-2 text-xs"
+          >
+            <Eye size={14} /> Preview
+          </button>
+        )}
+        {actions}
+      </div>
     </motion.div>
   );
 }
@@ -58,7 +96,11 @@ export default function ReviewPage() {
   const router = useRouter();
   const [tick, setTick] = useState(0);
   const [rejecting, setRejecting] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // The queue and the approved shelf page independently.
+  const [queuePage, setQueuePage] = useState(1);
+  const [approvedPage, setApprovedPage] = useState(1);
 
   useEffect(() => {
     if (user && !can.review(user.role)) router.replace("/dashboard");
@@ -75,6 +117,15 @@ export default function ReviewPage() {
 
   if (!user || !data || !can.review(user.role)) return null;
   const publisher = can.publish(user.role);
+  const preview =
+    [...data.queue, ...data.approved].find((c) => c.id === previewId) ?? null;
+
+  // Both lists shrink as items move through, so clamp before slicing.
+  const size = PAGE_SIZES.reviewRows;
+  const qPage = clampPage(queuePage, data.queue.length, size);
+  const aPage = clampPage(approvedPage, data.approved.length, size);
+  const queueRows = pageSlice(data.queue, qPage, size);
+  const approvedRows = pageSlice(data.approved, aPage, size);
 
   const act = (id: string, status: "approved" | "published" | "rejected", n?: string) => {
     setStatus(id, status, user, n);
@@ -92,11 +143,12 @@ export default function ReviewPage() {
 
       <div className="space-y-3">
         <AnimatePresence mode="popLayout">
-          {data.queue.map((c) => (
+          {queueRows.map((c) => (
             <Row
               key={c.id}
               c={c}
               users={data.users}
+              onPreview={() => setPreviewId(c.id)}
               actions={
                 <>
                   <button
@@ -132,6 +184,14 @@ export default function ReviewPage() {
         )}
       </div>
 
+      <Pager
+        page={qPage}
+        total={data.queue.length}
+        size={size}
+        onPage={setQueuePage}
+        label="waiting"
+      />
+
       {data.approved.length > 0 && (
         <>
           <h3 className="mt-8 mb-3 font-bold">
@@ -142,11 +202,12 @@ export default function ReviewPage() {
           </h3>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {data.approved.map((c) => (
+              {approvedRows.map((c) => (
                 <Row
                   key={c.id}
                   c={c}
                   users={data.users}
+                  onPreview={() => setPreviewId(c.id)}
                   actions={
                     publisher ? (
                       <button
@@ -163,8 +224,55 @@ export default function ReviewPage() {
               ))}
             </AnimatePresence>
           </div>
+          <Pager
+            page={aPage}
+            total={data.approved.length}
+            size={size}
+            onPage={setApprovedPage}
+            label="approved"
+          />
         </>
       )}
+
+      <PixPreviewModal
+        item={preview}
+        onClose={() => setPreviewId(null)}
+        actions={
+          preview?.status === "in_review" ? (
+            <>
+              <button
+                onClick={() => {
+                  setRejecting(preview.id);
+                  setNote("");
+                  setPreviewId(null);
+                }}
+                className="btn-ghost flex items-center gap-1.5 px-4 py-2.5 text-sm !text-rose"
+              >
+                <XCircle size={14} /> Reject
+              </button>
+              <button
+                onClick={() => {
+                  act(preview.id, "approved");
+                  setPreviewId(null);
+                }}
+                className="btn-primary flex flex-1 items-center justify-center gap-1.5 px-4 py-2.5 text-sm"
+              >
+                <CheckCircle2 size={14} /> Approve
+              </button>
+            </>
+          ) : preview?.status === "approved" && publisher ? (
+            <button
+              onClick={() => {
+                act(preview.id, "published");
+                setPreviewId(null);
+              }}
+              className="btn-accent flex flex-1 items-center justify-center gap-1.5 px-4 py-2.5 text-sm"
+            >
+              <Rocket size={14} /> Publish to app
+            </button>
+          ) : null
+        }
+      />
 
       <Modal
         open={!!rejecting}
@@ -172,7 +280,7 @@ export default function ReviewPage() {
         title="Reject with a note"
       >
         <p className="mb-3 text-sm text-muted">
-          Tell the writer what to fix — they'll see this on the draft.
+          Tell the writer what to fix — they&apos;ll see this on the draft.
         </p>
         <textarea
           className="field min-h-24"

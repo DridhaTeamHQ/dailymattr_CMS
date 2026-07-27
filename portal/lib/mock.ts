@@ -210,7 +210,245 @@ export const SEED_NEWSSTUDIO: NewsStudioArticle[] = [
   },
 ];
 
+/** Pix seed factory — headline ≤55 chars, exactly three key points. */
+const pix = (p: {
+  id: string;
+  title: string;
+  slug: string;
+  points: [string, string, string];
+  tags: string[];
+  cover: string;
+  state?: string | null;
+  status: ContentItem["status"];
+  createdBy?: string;
+  reviewedBy?: string | null;
+  reviewNote?: string | null;
+  publishedBy?: string | null;
+  hours: number;
+}): ContentItem => ({
+  id: p.id,
+  kind: "pix",
+  title: p.title,
+  slug: p.slug,
+  summary: p.points.join(" "),
+  body: { frames: p.points.length, points: p.points },
+  categorySlug: "india",
+  tags: p.tags,
+  language: "en",
+  state: p.state ?? null,
+  coverUrl: img(p.cover),
+  mediaUrl: null,
+  durationSec: null,
+  sourceLinks: [],
+  factScore: null,
+  factLabel: null,
+  source: "cms",
+  sourceArticleId: null,
+  status: p.status,
+  reviewNote: p.reviewNote ?? null,
+  createdBy: p.createdBy ?? "u-writer",
+  reviewedBy: p.reviewedBy ?? null,
+  publishedBy: p.publishedBy ?? null,
+  scheduledAt: null,
+  publishedAt: p.status === "published" ? hoursAgo(p.hours) : null,
+  createdAt: hoursAgo(p.hours + 6),
+  updatedAt: hoursAgo(p.hours),
+});
+
+/** Extra Pix so the QA queue, approved shelf and app feed all have content. */
+const SEED_PIX: ContentItem[] = [
+  pix({
+    id: "c-pix-3",
+    title: "Cheetah cubs step out at Kuno for the first time",
+    slug: "kuno-cheetah-cubs",
+    points: [
+      "Four cubs born at Kuno left their enclosure for the open grassland this week.",
+      "It is the first litter to survive past six months since the 2022 translocation.",
+      "Forest officials will track them by collar for another two seasons.",
+    ],
+    tags: ["wildlife", "photo-essay"],
+    cover: "cheetah-kuno",
+    state: "Madhya Pradesh",
+    status: "in_review",
+    hours: 2,
+  }),
+  pix({
+    id: "c-pix-4",
+    title: "Inside the night shift that keeps the city fed",
+    slug: "night-shift-market",
+    points: [
+      "Bowenpally market moves 900 tonnes of produce between 1am and 6am daily.",
+      "Nearly 4,000 loaders work the floor, most of them seasonal migrants.",
+      "A new cold-storage block cut overnight spoilage by roughly a fifth.",
+    ],
+    tags: ["cities", "photo-essay"],
+    cover: "night-market",
+    state: "Telangana",
+    status: "in_review",
+    hours: 5,
+  }),
+  pix({
+    id: "c-pix-5",
+    title: "Six charts on where India's solar power actually goes",
+    slug: "solar-power-charts",
+    points: [
+      "Rooftop solar crossed 17GW installed capacity in the last quarter.",
+      "Gujarat and Rajasthan together account for almost half of new additions.",
+      "Grid curtailment still wastes an estimated 3% of midday generation.",
+    ],
+    tags: ["energy", "data"],
+    cover: "solar-farm",
+    state: null,
+    status: "in_review",
+    hours: 7,
+  }),
+  pix({
+    id: "c-pix-6",
+    title: "The last letterpress in Secunderabad shuts shop",
+    slug: "letterpress-shuts",
+    points: [
+      "The 74-year-old press printed wedding cards for four generations of families.",
+      "Its owner is donating the type cases to a design school archive.",
+      "Only nine working letterpress units remain across the two Telugu states.",
+    ],
+    tags: ["culture", "photo-essay"],
+    cover: "letterpress",
+    state: "Telangana",
+    status: "approved",
+    reviewedBy: "u-qa",
+    hours: 9,
+  }),
+  pix({
+    id: "c-pix-7",
+    title: "Monsoon fishing ban lifts: the fleet returns",
+    slug: "fishing-ban-lifts",
+    points: [
+      "About 2,300 boats sailed from Visakhapatnam on the first day of the season.",
+      "Diesel subsidy claims must now be filed through the state's new portal.",
+      "Catch volumes in the first week ran ahead of last year's opening.",
+    ],
+    tags: ["coast", "photo-essay"],
+    cover: "fishing-boats",
+    state: "Andhra Pradesh",
+    status: "published",
+    reviewedBy: "u-qa",
+    publishedBy: "u-editor",
+    hours: 14,
+  }),
+  pix({
+    id: "c-pix-8",
+    title: "A week inside the Charminar restoration scaffolding",
+    slug: "charminar-restoration",
+    points: [
+      "Conservators are replacing lime plaster on the south-west minaret first.",
+      "The 16th-century stucco work is being documented in 3D before any repair.",
+      "Public access stays open throughout the 14-month schedule.",
+    ],
+    tags: ["heritage", "photo-essay"],
+    cover: "charminar",
+    state: "Telangana",
+    status: "rejected",
+    reviewedBy: "u-qa",
+    reviewNote:
+      "Point 3 contradicts the ASI note — access is restricted on weekdays. Please verify and resubmit.",
+    hours: 20,
+  }),
+  pix({
+    id: "c-pix-9",
+    title: "Bengaluru's lake revival, three years on",
+    slug: "bengaluru-lake-revival",
+    points: [
+      "Eleven of the 27 restored lakes now hold water through the dry months.",
+      "Sewage inflow still enters four of them from unconnected storm drains.",
+      "Citizen groups log water quality readings every fortnight.",
+    ],
+    tags: ["environment", "photo-essay"],
+    cover: "bengaluru-lake",
+    state: "Karnataka",
+    status: "in_review",
+    hours: 1,
+  }),
+  pix({
+    id: "c-pix-10",
+    title: "The women running Kerala's coir cooperatives",
+    slug: "kerala-coir-women",
+    points: [
+      "Around 8,000 women run 62 coir societies across Alappuzha district.",
+      "Mechanised spinning lifted daily output per worker roughly threefold.",
+      "Export orders shifted towards geotextiles rather than floor mats.",
+    ],
+    tags: ["work", "photo-essay"],
+    cover: "kerala-coir",
+    state: "Kerala",
+    status: "in_review",
+    hours: 3,
+  }),
+  pix({
+    id: "c-pix-11",
+    title: "Delhi's winter smog, measured street by street",
+    slug: "delhi-smog-street",
+    points: [
+      "Low-cost sensors on 400 autos mapped PM2.5 across the city for a month.",
+      "Readings varied up to fourfold between arterial roads and inner colonies.",
+      "The dataset is now open for researchers under a public licence.",
+    ],
+    tags: ["environment", "data"],
+    cover: "delhi-smog",
+    state: "Delhi",
+    status: "in_review",
+    hours: 4,
+  }),
+  pix({
+    id: "c-pix-12",
+    title: "Handloom weavers move online, one reel at a time",
+    slug: "handloom-weavers-online",
+    points: [
+      "Pochampally clusters now take a third of their orders through social video.",
+      "Weaver collectives share one packing hub to keep shipping costs down.",
+      "Average realisation per saree rose after cutting out two middle layers.",
+    ],
+    tags: ["craft", "photo-essay"],
+    cover: "handloom-pochampally",
+    state: "Telangana",
+    status: "in_review",
+    hours: 6,
+  }),
+  pix({
+    id: "c-pix-13",
+    title: "Night trains: what the new timetable changes",
+    slug: "night-trains-timetable",
+    points: [
+      "Fourteen overnight services gained an hour of running time from this month.",
+      "Two Vande Bharat rakes shift to sleeper configuration on the Nagpur route.",
+      "Platform ticket checks tighten at six major junctions after 10pm.",
+    ],
+    tags: ["transport", "explainer"],
+    cover: "night-train",
+    state: null,
+    status: "approved",
+    reviewedBy: "u-qa",
+    hours: 8,
+  }),
+  pix({
+    id: "c-pix-14",
+    title: "Inside a Chennai flood shelter, hour by hour",
+    slug: "chennai-flood-shelter",
+    points: [
+      "A single school building held 640 people at the peak of the second night.",
+      "Volunteers ran a rota of hot meals every four hours from one kitchen.",
+      "Most families returned home within nine days of the water receding.",
+    ],
+    tags: ["cities", "photo-essay"],
+    cover: "chennai-flood",
+    state: "Tamil Nadu",
+    status: "approved",
+    reviewedBy: "u-qa",
+    hours: 11,
+  }),
+];
+
 export const SEED_CONTENT: ContentItem[] = [
+  ...SEED_PIX,
   {
     id: "c-qix-1",
     kind: "qix",
@@ -277,8 +515,15 @@ export const SEED_CONTENT: ContentItem[] = [
     title: "Monsoon in 6 frames: the week the city went underwater",
     slug: "monsoon-six-frames",
     summary:
-      "Six images, six captions — how record rainfall reshaped a city's week.",
-    body: { frames: 6 },
+      "Hyderabad logged 21cm of rain in 36 hours, its wettest spell since 2020. Six lakes crossed full tank level, flooding 40 low-lying colonies. Metro services ran free for two days to clear stranded commuters.",
+    body: {
+      frames: 6,
+      points: [
+        "Hyderabad logged 21cm of rain in 36 hours, its wettest spell since 2020.",
+        "Six lakes crossed full tank level, flooding 40 low-lying colonies.",
+        "Metro services ran free for two days to clear stranded commuters.",
+      ],
+    },
     categorySlug: "india",
     tags: ["photo-essay"],
     language: "en",
@@ -300,6 +545,43 @@ export const SEED_CONTENT: ContentItem[] = [
     publishedAt: null,
     createdAt: hoursAgo(4),
     updatedAt: hoursAgo(2),
+  },
+  {
+    id: "c-pix-2",
+    kind: "pix",
+    title: "Metro Phase II: what opens first, and when",
+    slug: "metro-phase-two-opens",
+    summary:
+      "The 26km Blue Line extension opens to riders on 2 October. Fares stay capped at ₹60 for the first six months. Four interchange stations link it to the existing Red and Green lines.",
+    body: {
+      frames: 4,
+      points: [
+        "The 26km Blue Line extension opens to riders on 2 October.",
+        "Fares stay capped at ₹60 for the first six months.",
+        "Four interchange stations link it to the Red and Green lines.",
+      ],
+    },
+    categorySlug: "india",
+    tags: ["transport", "explainer"],
+    language: "en",
+    state: "Telangana",
+    coverUrl: img("metro-phase-2"),
+    mediaUrl: null,
+    durationSec: null,
+    sourceLinks: [],
+    factScore: null,
+    factLabel: null,
+    source: "cms",
+    sourceArticleId: null,
+    status: "in_review",
+    reviewNote: null,
+    createdBy: "u-writer",
+    reviewedBy: null,
+    publishedBy: null,
+    scheduledAt: null,
+    publishedAt: null,
+    createdAt: hoursAgo(9),
+    updatedAt: hoursAgo(3),
   },
   {
     id: "c-art-1",

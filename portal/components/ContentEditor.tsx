@@ -17,6 +17,19 @@ import {
   uid,
   upsertContent,
 } from "@/lib/store";
+import { PixBezel } from "@/components/PixPoster";
+import {
+  PIX_CHARS_PER_LINE,
+  PIX_LINES,
+  PIX_POINT_COUNT,
+  PIX_POINT_MAX,
+  PIX_TITLE_MAX,
+  getPixPoints,
+  pixLines,
+  pixSummary,
+  type PixPlacement,
+} from "@/lib/pix";
+import { markReport } from "@/lib/pixHighlight";
 import { KIND_META, type ContentItem, type ContentKind } from "@/lib/types";
 
 const emptyItem = (kind: ContentKind, userId: string): ContentItem => ({
@@ -57,6 +70,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
   const [item, setItem] = useState<ContentItem | null>(null);
   const [saved, setSaved] = useState<null | "draft" | "review">(null);
+  const [placement, setPlacement] = useState<PixPlacement>("list");
   const categories = useMemo(() => getCategories(), []);
 
   useEffect(() => {
@@ -79,6 +93,27 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     setItem((it) => (it ? { ...it, [k]: v } : it));
 
   const wordCount = item.summary.trim() ? item.summary.trim().split(/\s+/).length : 0;
+
+  const isPix = kind === "pix";
+  const points = getPixPoints(item);
+  const filledPoints = points.filter((p) => p.trim()).length;
+  const titleLines = {
+    list: pixLines(item.title, PIX_CHARS_PER_LINE.headlineList),
+    page: pixLines(item.title, PIX_CHARS_PER_LINE.headlinePage),
+  };
+  const blue = markReport(item.title);
+
+  const setPoint = (idx: number, value: string) =>
+    setItem((it) => {
+      if (!it) return it;
+      const next = getPixPoints(it);
+      next[idx] = value.slice(0, PIX_POINT_MAX);
+      return {
+        ...it,
+        body: { ...it.body, points: next },
+        summary: pixSummary(next),
+      };
+    });
 
   /** Fills the form from a scraped source. Returns the field names it touched. */
   const applyImport = (d: ImportedArticle, overwrite: boolean): string[] => {
@@ -144,7 +179,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     can.editAny(user.role);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={`mx-auto ${isPix ? "max-w-5xl" : "max-w-3xl"}`}>
       <button
         onClick={() => router.push(listHref)}
         className="btn-ghost mb-5 flex items-center gap-2 px-4 py-2 text-xs"
@@ -166,22 +201,107 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         </div>
       )}
 
+      <div
+        className={
+          isPix
+            ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_252px]"
+            : undefined
+        }
+      >
       <div className="card space-y-5 p-7">
         {kind === "article" && editable && (
           <SourceImport onImport={applyImport} disabled={!editable} />
         )}
 
         <div>
-          <div className="label mb-2">Title</div>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="label">{isPix ? "Headline" : "Title"}</div>
+            {isPix && (
+              <span
+                className={`text-[11px] font-bold tabular-nums ${
+                  titleLines.list > PIX_LINES.headline
+                    ? "text-rose"
+                    : item.title.length > PIX_TITLE_MAX * 0.9
+                      ? "text-amber"
+                      : "text-faint"
+                }`}
+              >
+                {item.title.length} / {PIX_TITLE_MAX} ·{" "}
+                {titleLines.list} of {PIX_LINES.headline} lines
+              </span>
+            )}
+          </div>
           <input
             className="field text-[15px] font-semibold"
             value={item.title}
+            maxLength={isPix ? PIX_TITLE_MAX : undefined}
             disabled={!editable}
             onChange={(e) => set("title", e.target.value)}
             placeholder={`A sharp ${meta.label.replace(/s$/, "").toLowerCase()} title…`}
           />
+          {isPix && (
+            <p className="mt-2 text-[11px] text-faint">
+              Four lines on both placements — about {PIX_CHARS_PER_LINE.headlineList}{" "}
+              characters per line in the feed card,{" "}
+              {PIX_CHARS_PER_LINE.headlinePage} on the reader page. Anything
+              longer is truncated, not wrapped.
+            </p>
+          )}
         </div>
 
+        {isPix ? (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="label">Key points</div>
+              <span
+                className={`text-[11px] font-bold tabular-nums ${
+                  filledPoints === PIX_POINT_COUNT ? "text-mint" : "text-faint"
+                }`}
+              >
+                {filledPoints} / {PIX_POINT_COUNT}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {points.map((p, i) => {
+                const lines = pixLines(p, PIX_CHARS_PER_LINE.point);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span
+                      className="mt-0 h-[7px] w-[7px] shrink-0 rounded-[4px]"
+                      style={{ background: "var(--color-accent)" }}
+                    />
+                    <input
+                      className="field"
+                      value={p}
+                      maxLength={PIX_POINT_MAX}
+                      disabled={!editable}
+                      onChange={(e) => setPoint(i, e.target.value)}
+                      placeholder={`Point ${i + 1} — one fact, up to ${PIX_LINES.point} lines…`}
+                    />
+                    <span
+                      className={`w-20 shrink-0 text-right text-[11px] font-bold tabular-nums ${
+                        lines > PIX_LINES.point
+                          ? "text-rose"
+                          : p.length > PIX_POINT_MAX * 0.9
+                            ? "text-amber"
+                            : "text-faint"
+                      }`}
+                    >
+                      {p.length} / {PIX_POINT_MAX}
+                      <span className="block font-medium text-faint">
+                        {lines}/{PIX_LINES.point} lines
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-faint">
+              Exactly {PIX_POINT_COUNT} points — slide two has three slots and
+              all of them are required before submitting for review.
+            </p>
+          </div>
+        ) : (
         <div>
           <div className="mb-2 flex items-center justify-between">
             <div className="label">
@@ -205,6 +325,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             placeholder="Context to impact, no fluff…"
           />
         </div>
+        )}
 
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
@@ -348,6 +469,63 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         </div>
       </div>
 
+      {isPix && (
+        <aside className="h-fit lg:sticky lg:top-6">
+          <div className="card p-4">
+            <div className="mb-3 flex items-center gap-1 rounded-full bg-canvas p-1">
+              {(
+                [
+                  ["list", "Feed card"],
+                  ["page", "Reader page"],
+                ] as [PixPlacement, string][]
+              ).map(([p, label]) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlacement(p)}
+                  className={`flex-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition-colors ${
+                    placement === p
+                      ? "bg-ink text-white"
+                      : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="shadow-(--shadow-soft)">
+              <PixBezel item={item} placement={placement} />
+            </div>
+
+            <p className="mt-2 text-center text-[10px] text-faint">
+              Tap the dots to see slide two
+            </p>
+
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="label mb-1.5">Marked words</p>
+              <p className="text-[11px] leading-relaxed text-muted">
+                Figures, months, acronyms and proper nouns turn blue on device —
+                never the first word.{" "}
+                {item.title.trim() ? (
+                  <span
+                    className={`font-bold ${
+                      blue.cappedBack ? "text-amber" : "text-mint"
+                    }`}
+                  >
+                    {Math.round(blue.share * 100)}% of this headline marks
+                    {blue.cappedBack
+                      ? " — over the 45% ceiling, so proper nouns were dropped and only figures and acronyms stay blue."
+                      : "."}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+          </div>
+        </aside>
+      )}
+      </div>
+
       {editable && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -373,7 +551,10 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             </button>
             <button
               onClick={() => persist(true)}
-              disabled={!item.title || !item.summary}
+              disabled={
+                !item.title ||
+                (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
+              }
               className="btn-accent flex items-center gap-2 px-5 py-2.5 text-xs disabled:opacity-40"
             >
               <Send size={14} /> Submit for review

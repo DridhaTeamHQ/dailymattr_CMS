@@ -23,7 +23,8 @@ import type {
   NewsStudioArticle,
 } from "./types";
 
-const NS = "dailymattr-cms:v1:";
+// Bump when SEED_* changes — old browsers hold the previous seed in localStorage.
+const NS = "dailymattr-cms:v2:";
 
 function read<T>(key: string, seed: T): T {
   if (typeof window === "undefined") return seed;
@@ -110,6 +111,14 @@ export function upsertContent(item: ContentItem) {
   if (i >= 0) all[i] = { ...item, updatedAt: new Date().toISOString() };
   else all.unshift(item);
   saveContent(all);
+}
+
+export function deleteContent(id: string, actor: CmsUser) {
+  const all = getContent();
+  const item = all.find((c) => c.id === id);
+  if (!item) return;
+  saveContent(all.filter((c) => c.id !== id));
+  logAudit(actor, "deleted", item.kind, item.title);
 }
 
 export function setStatus(
