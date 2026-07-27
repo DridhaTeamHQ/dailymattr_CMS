@@ -151,7 +151,11 @@ const statusVerb = (s: ContentStatus) =>
             : "updated";
 
 // ── audit ───────────────────────────────────────────────────────────
-export const getAudit = (): AuditEntry[] => read("audit", SEED_AUDIT);
+/** Newest first — callers slice the top N and group by day. */
+export const getAudit = (): AuditEntry[] =>
+  read("audit", SEED_AUDIT)
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 export function logAudit(
   actor: CmsUser,

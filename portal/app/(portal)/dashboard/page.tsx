@@ -9,6 +9,7 @@ import {
   FileEdit,
   Sparkles,
 } from "lucide-react";
+import FormatChart from "@/components/FormatChart";
 import { Avatar, FactBadge, Pill, SectionHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import {
@@ -19,7 +20,7 @@ import {
   timeAgo,
 } from "@/lib/store";
 import { useStore } from "@/lib/useStore";
-import { KIND_META, type ContentKind } from "@/lib/types";
+import { type ContentKind } from "@/lib/types";
 
 const KINDS: ContentKind[] = ["article", "pix", "qix", "trax"];
 
@@ -77,7 +78,6 @@ export default function DashboardPage() {
       (c) => c.kind === k && c.status === "published"
     ).length,
   }));
-  const maxTotal = Math.max(1, ...byKind.map((b) => b.total + 1));
 
   return (
     <div>
@@ -124,55 +124,22 @@ export default function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         {/* chart card */}
         <div className="card p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h3 className="font-bold">Library by format</h3>
-              <p className="text-xs text-muted">total vs published</p>
-            </div>
-            <div className="flex items-center gap-3 text-xs font-medium text-muted">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-line" /> Total
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Published
-              </span>
-            </div>
-          </div>
-          <div className="flex h-48 items-end justify-around gap-6 px-2">
-            {byKind.map((b, i) => (
-              <div key={b.kind} className="flex flex-1 flex-col items-center gap-2">
-                <div className="flex h-40 w-full items-end justify-center gap-2">
-                  <div
-                    className="bar-grow w-7 rounded-t-xl bg-line"
-                    style={{
-                      height: `${(b.total / maxTotal) * 100}%`,
-                      animationDelay: `${i * 90}ms`,
-                    }}
-                  />
-                  <div
-                    className="bar-grow w-7 rounded-t-xl bg-accent shadow-[0_8px_20px_rgba(57,121,255,0.35)]"
-                    style={{
-                      height: `${Math.max(6, (b.published / maxTotal) * 100)}%`,
-                      animationDelay: `${120 + i * 90}ms`,
-                    }}
-                  />
-                </div>
-                <Link
-                  href={`/content/${b.kind === "article" ? "articles" : b.kind}`}
-                  className="text-xs font-bold text-muted hover:text-accent"
-                >
-                  {KIND_META[b.kind].label}
-                </Link>
-              </div>
-            ))}
-          </div>
+          <FormatChart data={byKind} />
         </div>
 
         {/* activity */}
-        <div className="card p-6">
-          <h3 className="mb-4 font-bold">Recent activity</h3>
+        <div className="card flex flex-col p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="font-bold">Recent activity</h3>
+            <Link
+              href="/activity"
+              className="text-xs font-bold text-accent hover:underline"
+            >
+              View all
+            </Link>
+          </div>
           <div className="space-y-1">
-            {data.audit.slice(0, 6).map((a) => (
+            {data.audit.slice(0, 4).map((a) => (
               <div
                 key={a.id}
                 className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-canvas"
