@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import ArticlePreview from "@/components/ArticlePreview";
+import NewsVisual from "@/components/NewsVisual";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
@@ -239,50 +240,50 @@ export default function ArticlesPage() {
                   >
                     <button
                       onClick={() => setPreviewId(n.id)}
-                      className="text-left"
+                      className="relative block h-64 w-full overflow-hidden text-left"
                       title="Preview in app"
                     >
-                      <div className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={n.imageUrl}
-                          alt=""
-                          className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
-                        <div className="absolute top-3 left-3">
-                          <span className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-ink uppercase backdrop-blur">
-                            {n.category}
-                          </span>
-                        </div>
-                        <div className="absolute top-3 right-3 flex gap-1.5">
+                      <NewsVisual src={n.imageUrl} imageHeight="56%" />
+
+                      {/* chips */}
+                      <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3">
+                        <span className="rounded-full border border-white/10 bg-white/20 px-3 py-1 text-[10px] font-semibold text-white backdrop-blur-md">
+                          {n.category}
+                        </span>
+                        <div className="flex items-center gap-1.5">
                           {sel?.isFeatured && (
-                            <span className="rounded-full bg-violet px-2.5 py-1 text-[10px] font-extrabold text-white">
+                            <span className="rounded-full bg-violet px-2 py-1 text-[10px] font-extrabold text-white">
                               ★
                             </span>
                           )}
-                          {approved && (
+                          {approved ? (
                             <span className="flex items-center gap-1 rounded-full bg-mint px-2 py-1 text-[10px] font-extrabold text-white">
-                              <Check size={11} strokeWidth={3} />#{sel.position}
+                              <Check size={10} strokeWidth={3} />#{sel.position}
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-white/10 bg-white/20 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur-md">
+                              {timeAgo(n.publishedAt)}
                             </span>
                           )}
                         </div>
-                        <span className="absolute right-3 bottom-3 flex items-center gap-1 rounded-full bg-ink/70 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-                          <Smartphone size={11} /> Preview
-                        </span>
                       </div>
 
-                      <div className="p-4 pb-3">
-                        <h3 className="line-clamp-2 text-[14px] leading-snug font-bold">
+                      {/* headline over the wash */}
+                      <div className="absolute inset-x-0 bottom-0 z-20 p-4">
+                        <h3 className="line-clamp-3 text-[15px] leading-[1.2] font-extrabold tracking-tight text-white">
                           {sel?.titleOverride ?? n.title}
                         </h3>
-                        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">
+                        <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-[1.5] text-white/75">
                           {sel?.summaryOverride ?? n.summary}
                         </p>
                       </div>
+
+                      <span className="absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-black/55 px-3 py-1.5 text-[11px] font-bold text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+                        <Smartphone size={12} /> Preview
+                      </span>
                     </button>
 
-                    <div className="mt-auto px-4 pb-4">
+                    <div className="mt-auto px-4 pt-3 pb-4">
                       <div className="flex items-center justify-between text-[11px] text-faint">
                         <span className="flex items-center gap-1.5">
                           <span
@@ -298,10 +299,9 @@ export default function ArticlesPage() {
                           </span>
                           · {n.sourceCount} SRC
                         </span>
-                        <span>{timeAgo(n.publishedAt)}</span>
-                      </div>
-                      <div className="mt-1 truncate text-[11px] font-semibold text-muted">
-                        {n.source}
+                        <span className="truncate font-semibold text-muted">
+                          {n.source}
+                        </span>
                       </div>
 
                       {approver && (

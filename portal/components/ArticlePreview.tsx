@@ -2,16 +2,61 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Check, RotateCcw, Sparkles, Star } from "lucide-react";
+import {
+  Bookmark,
+  Check,
+  Headphones,
+  Heart,
+  LayoutGrid,
+  MessageCircle,
+  RotateCcw,
+  Share2,
+  Sparkles,
+  Star,
+  Wifi,
+} from "lucide-react";
+import NewsVisual from "./NewsVisual";
 import { Modal, Pill } from "./ui";
 import { timeAgo } from "@/lib/store";
 import type { ArticleSelection, NewsStudioArticle } from "@/lib/types";
 
+/** Stable brand-ish colour for a publisher badge. */
+function sourceHue(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+}
+
+function StatusBar() {
+  return (
+    <div className="relative z-20 flex items-center justify-between px-5 pt-2.5 text-white">
+      <span className="text-[11px] font-semibold">1:29</span>
+      <div className="flex items-center gap-1">
+        <Wifi size={11} />
+        <span className="flex items-end gap-[1px]">
+          {[3, 5, 7, 9].map((h) => (
+            <span
+              key={h}
+              className="w-[2px] rounded-sm bg-white"
+              style={{ height: h }}
+            />
+          ))}
+        </span>
+        <span className="ml-0.5 rounded-[4px] border border-white/70 px-1 text-[8px] font-bold">
+          76
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const glass =
+  "rounded-full bg-white/20 backdrop-blur-md text-white border border-white/10";
+
 /**
  * Phone-frame preview of a NewsStudio article exactly as the DailyMattr app
- * renders it (image first, 60-word story, FACT badge), with editorial
- * overrides. Overrides are stored on the CMS-side selection row — the
- * NewsStudio database is never written to.
+ * renders it, with editorial overrides. Overrides are stored on the CMS-side
+ * selection row — the NewsStudio database is never written to.
  */
 export default function ArticlePreview({
   article,
@@ -26,7 +71,10 @@ export default function ArticlePreview({
   selection: ArticleSelection | undefined;
   canEdit: boolean;
   onClose: () => void;
-  onSave: (patch: { titleOverride: string | null; summaryOverride: string | null }) => void;
+  onSave: (patch: {
+    titleOverride: string | null;
+    summaryOverride: string | null;
+  }) => void;
   onToggleFeed: () => void;
   onToggleFeature: () => void;
 }) {
@@ -43,9 +91,15 @@ export default function ArticlePreview({
   if (!article) return null;
 
   const words = summary.trim() ? summary.trim().split(/\s+/).length : 0;
-  const edited =
-    title !== article.title || summary !== article.summary;
+  const edited = title !== article.title || summary !== article.summary;
   const inFeed = !!selection;
+  const hue = sourceHue(article.source);
+  const initials = article.source
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 3)
+    .join("")
+    .toUpperCase();
 
   const save = () => {
     onSave({
@@ -56,63 +110,85 @@ export default function ArticlePreview({
     setTimeout(() => setSavedAt(0), 1600);
   };
 
-  const revert = () => {
-    setTitle(article.title);
-    setSummary(article.summary);
-  };
-
   return (
     <Modal open={!!article} onClose={onClose} title="App preview" wide>
-      <div className="grid gap-8 md:grid-cols-[268px_1fr]">
-        {/* ── phone frame ─────────────────────────────── */}
+      <div className="grid gap-8 md:grid-cols-[300px_1fr]">
+        {/* ── phone ───────────────────────────────────────── */}
         <div className="mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }}
-            className="w-[268px] rounded-[2.6rem] bg-ink p-2.5 shadow-(--shadow-pop)"
+            className="w-[300px] rounded-[2.4rem] bg-black p-[7px] shadow-(--shadow-pop)"
           >
-            <div className="relative h-[532px] overflow-hidden rounded-[2.1rem] bg-white">
-              {/* notch */}
-              <div className="absolute top-2 left-1/2 z-20 h-5 w-24 -translate-x-1/2 rounded-full bg-ink" />
+            <div className="relative h-[610px] overflow-hidden rounded-[2rem] bg-black">
+              <NewsVisual src={article.imageUrl} imageHeight="52%" />
 
-              {/* image-first, like the app's swipe card */}
-              <div className="relative h-[290px] w-full">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={article.imageUrl}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
-                <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
-                <div className="absolute bottom-3 left-4 flex items-center gap-1.5">
-                  <span className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-extrabold tracking-wide text-ink uppercase">
-                    {article.category}
+              <StatusBar />
+
+              {/* chips */}
+              <div className="relative z-20 mt-2.5 flex items-center justify-between px-4">
+                <span
+                  className={`${glass} px-3.5 py-1.5 text-[11px] font-semibold`}
+                >
+                  {article.category}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`${glass} px-3 py-1.5 text-[11px] font-semibold`}
+                  >
+                    {timeAgo(article.publishedAt)}
                   </span>
-                  {selection?.isFeatured && (
-                    <span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-extrabold text-white">
-                      FEATURED
-                    </span>
-                  )}
+                  <span
+                    className={`${glass} flex h-8 w-8 items-center justify-center`}
+                  >
+                    <LayoutGrid size={14} />
+                  </span>
                 </div>
               </div>
 
               {/* story */}
-              <div className="flex h-[242px] flex-col p-4">
-                <h3 className="text-[15px] leading-[1.25] font-extrabold tracking-tight">
+              <div className="absolute inset-x-0 bottom-0 z-20 px-5 pb-3">
+                <h3 className="text-[20px] leading-[1.16] font-extrabold tracking-tight text-white">
                   {title || "Untitled story"}
                 </h3>
-                <p className="mt-2 flex-1 overflow-hidden text-[11.5px] leading-[1.55] text-muted">
+                <p
+                  className="mt-3 text-[13px] leading-[1.62] text-white/85"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: 9,
+                    overflow: "hidden",
+                  }}
+                >
                   {summary}
                 </p>
-                <div className="mt-2 flex items-center justify-between border-t border-line pt-2.5">
-                  <span className="text-[9.5px] font-extrabold tracking-wider text-mint">
-                    FACT {article.factScore} · {article.sourceCount} SRC
+
+                {/* actions */}
+                <div className="mt-4 flex items-center justify-between pb-1">
+                  <span
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-[8px] font-extrabold text-white"
+                    style={{ background: `hsl(${hue} 72% 45%)` }}
+                    title={article.source}
+                  >
+                    {initials}
                   </span>
-                  <span className="text-[9.5px] font-semibold text-faint">
-                    {timeAgo(article.publishedAt)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {[Headphones, Heart, Bookmark, Share2, MessageCircle].map(
+                      (Icon, i) => (
+                        <span
+                          key={i}
+                          className={`${glass} flex h-8 w-8 items-center justify-center`}
+                        >
+                          <Icon size={13} />
+                        </span>
+                      )
+                    )}
+                  </div>
                 </div>
+
+                {/* home indicator */}
+                <div className="mx-auto mt-2 h-1 w-28 rounded-full bg-white/70" />
               </div>
             </div>
           </motion.div>
@@ -121,7 +197,7 @@ export default function ArticlePreview({
           </p>
         </div>
 
-        {/* ── editor side ─────────────────────────────── */}
+        {/* ── editor ──────────────────────────────────────── */}
         <div className="flex flex-col">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Pill tone="accent">{article.category}</Pill>
@@ -197,7 +273,10 @@ export default function ArticlePreview({
                 )}
                 {edited && (
                   <button
-                    onClick={revert}
+                    onClick={() => {
+                      setTitle(article.title);
+                      setSummary(article.summary);
+                    }}
                     title="Revert to the original NewsStudio copy"
                     className="btn-ghost flex h-9 w-9 items-center justify-center !p-0"
                   >
@@ -219,7 +298,7 @@ export default function ArticlePreview({
               <h3 className="text-lg leading-snug font-bold">{title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-muted">{summary}</p>
               <p className="mt-5 text-[11px] text-faint">
-                Chief editors curate and edit what appears in the app feed.
+                QA approves and edits what appears in the app feed.
               </p>
             </>
           )}
