@@ -10,7 +10,7 @@ export default function Topbar() {
   if (!user) return null;
 
   return (
-    <header className="mb-6 flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-50 mb-6 flex items-center justify-between gap-4 bg-canvas pt-4 md:pt-6 pb-3 transition-all">
       <div className="relative w-full max-w-sm">
         <Search
           size={16}
