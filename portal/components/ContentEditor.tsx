@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import MediaDrop from "@/components/MediaDrop";
+import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
@@ -79,6 +80,47 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
   const wordCount = item.summary.trim() ? item.summary.trim().split(/\s+/).length : 0;
 
+  /** Fills the form from a scraped source. Returns the field names it touched. */
+  const applyImport = (d: ImportedArticle, overwrite: boolean): string[] => {
+    const filled: string[] = [];
+    const next = { ...item };
+
+    if (d.title && (overwrite || !next.title.trim())) {
+      next.title = d.title;
+      filled.push("headline");
+    }
+    if (d.summary && (overwrite || !next.summary.trim())) {
+      next.summary = d.summary;
+      filled.push("story");
+    }
+    if (d.image && (overwrite || !next.coverUrl)) {
+      next.coverUrl = d.image;
+      filled.push("cover image");
+    }
+    if (overwrite || next.sourceLinks.length === 0) {
+      next.sourceLinks = [{ title: d.siteName ?? "Source", url: d.sourceUrl }];
+      filled.push("source link");
+    }
+    const section = d.section?.trim().toLowerCase();
+    const match = section
+      ? categories.find(
+          (c) => c.name.toLowerCase() === section || c.slug === slugify(section)
+        )
+      : undefined;
+    if (match && (overwrite || !next.categorySlug)) {
+      next.categorySlug = match.slug;
+      filled.push("category");
+    }
+    if (d.keywords.length && (overwrite || next.tags.length === 0)) {
+      next.tags = d.keywords;
+      filled.push("tags");
+    }
+    if (!next.slug && next.title) next.slug = slugify(next.title);
+
+    setItem(next);
+    return filled;
+  };
+
   const persist = (submit: boolean) => {
     const final: ContentItem = {
       ...item,
@@ -125,6 +167,10 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
       )}
 
       <div className="card space-y-5 p-7">
+        {kind === "article" && editable && (
+          <SourceImport onImport={applyImport} disabled={!editable} />
+        )}
+
         <div>
           <div className="label mb-2">Title</div>
           <input

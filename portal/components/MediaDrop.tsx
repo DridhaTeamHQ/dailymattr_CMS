@@ -30,11 +30,21 @@ export default function MediaDrop({
     reader.readAsDataURL(file);
   };
 
-  if (value && value.startsWith("data:image")) {
+  const isPreviewable =
+    !!value && (value.startsWith("data:image") || /^https?:\/\//i.test(value));
+
+  if (isPreviewable) {
     return (
       <div className="relative overflow-hidden rounded-2xl border border-line">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={value} alt="cover" className="h-40 w-full object-cover" />
+        <img
+          src={value!}
+          alt="cover"
+          className="h-40 w-full bg-canvas object-cover"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.opacity = "0.25";
+          }}
+        />
         <button
           type="button"
           onClick={() => onChange(null)}
