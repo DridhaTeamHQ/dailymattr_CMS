@@ -80,6 +80,9 @@ export interface ArticleSelection {
   isFeatured: boolean;
   selectedBy: string;
   selectedAt: string;
+  /** Editorial overrides live here — DB A (NewsStudio) is never written to. */
+  titleOverride?: string | null;
+  summaryOverride?: string | null;
 }
 
 export interface AuditEntry {

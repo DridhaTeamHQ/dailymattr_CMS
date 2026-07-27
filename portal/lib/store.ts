@@ -61,8 +61,26 @@ export const getNewsStudio = (): NewsStudioArticle[] =>
 
 // ── selections ──────────────────────────────────────────────────────
 export const getSelections = (): ArticleSelection[] =>
-  read("selections", SEED_SELECTIONS);
-export const saveSelections = (s: ArticleSelection[]) => write("selections", s);
+  read("selections", SEED_SELECTIONS)
+    .slice()
+    .sort((a, b) => a.position - b.position);
+
+export const saveSelections = (s: ArticleSelection[]) =>
+  write(
+    "selections",
+    s.map((sel, i) => ({ ...sel, position: i + 1 }))
+  );
+
+export function updateSelection(
+  articleId: string,
+  patch: Partial<ArticleSelection>
+) {
+  const all = getSelections();
+  const i = all.findIndex((s) => s.articleId === articleId);
+  if (i < 0) return;
+  all[i] = { ...all[i], ...patch };
+  saveSelections(all);
+}
 
 // ── content ─────────────────────────────────────────────────────────
 export const getContent = (): ContentItem[] => read("content", SEED_CONTENT);
