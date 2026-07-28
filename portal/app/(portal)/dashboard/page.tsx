@@ -160,31 +160,34 @@ export default function DashboardPage() {
               entries left the card half empty. flex-1 + min-h-0 lets the list
               take whatever height the row ends up being, and scroll only when
               there is genuinely more than fits. */}
-          <div className="-mr-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-2">
-            {data.audit.map((a) => (
+          {/* Six entries, at a comfortable size. Six is roughly what fills the
+              height this card gets from the chart column beside it, so the
+              panel reads full without cramming. */}
+          <div className="-mr-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-2">
+            {data.audit.slice(0, 6).map((a) => (
               <div
                 key={a.id}
-                className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-canvas"
+                className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-canvas"
               >
                 <Avatar
                   name={a.actorName}
                   hue={220 + ((a.actorName.length * 37) % 140)}
-                  size={24}
+                  size={32}
                 />
-                {/* One line per entry. Wrapping was the whole problem: a long
-                    headline took three or four lines and cost the space of an
-                    entire extra entry. Truncating costs the tail of a title;
-                    wrapping cost whole entries, which is the worse trade for a
-                    feed whose job is to show what is going on. Full text is a
-                    click away under "View all". */}
-                <p className="min-w-0 flex-1 truncate text-[12px]">
-                  <span className="font-bold">{a.actorName}</span>{" "}
-                  <span className="text-muted">{a.action}</span>{" "}
-                  <span className="font-semibold">{a.entityTitle}</span>
-                </p>
-                <span className="shrink-0 text-[10px] whitespace-nowrap text-faint">
-                  {timeAgo(a.createdAt)}
-                </span>
+                <div className="min-w-0 flex-1">
+                  {/* Clamped to two lines. Unclamped, a long headline wrapped
+                      to three or four and pushed the last entries out of the
+                      card, so the count silently depended on how wordy the
+                      newest title happened to be. */}
+                  <p className="line-clamp-2 text-[13px] leading-snug">
+                    <span className="font-bold">{a.actorName}</span>{" "}
+                    <span className="text-muted">{a.action}</span>{" "}
+                    <span className="font-semibold">{a.entityTitle}</span>
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-faint">
+                    {a.entity} · {timeAgo(a.createdAt)}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
