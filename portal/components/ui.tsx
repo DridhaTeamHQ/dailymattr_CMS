@@ -6,7 +6,10 @@ import type { ContentStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 
 const TONES: Record<string, string> = {
-  muted: "bg-[#f0f0f4] text-muted",
+  // `line` rather than a literal: the neutral chip was hard-coded near-white,
+  // so in dark mode it kept a pale background under text that had flipped
+  // light — 2.3:1, effectively unreadable.
+  muted: "bg-line text-muted",
   accent: "bg-tint text-accent",
   mint: "bg-mint-tint text-mint",
   amber: "bg-amber-tint text-amber",

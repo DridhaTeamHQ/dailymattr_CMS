@@ -143,7 +143,7 @@ export default function LoginPage() {
                   className={`relative rounded-2xl border px-3 py-2.5 text-left transition-all ${
                     active
                       ? "border-accent bg-tint shadow-[0_0_0_4px_rgba(57,121,255,0.10)]"
-                      : "border-line bg-[#fafafc] hover:border-faint"
+                      : "border-line bg-field hover:border-faint"
                   }`}
                 >
                   <div
@@ -196,7 +196,7 @@ export default function LoginPage() {
 
           <div className="relative my-4 flex items-center justify-center text-[11px] font-semibold text-faint uppercase">
             <span className="w-full border-t border-line" />
-            <span className="absolute bg-[#ffffff] px-2 tracking-wider">
+            <span className="absolute bg-card px-2 tracking-wider">
               or use password
             </span>
           </div>

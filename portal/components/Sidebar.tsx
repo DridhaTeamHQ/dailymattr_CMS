@@ -35,7 +35,11 @@ export default function Sidebar() {
   return (
     <aside className="sticky top-4 md:top-6 mt-4 md:mt-6 z-40 flex h-[calc(100vh-2rem)] md:h-[calc(100vh-3rem)] w-[86px] shrink-0 self-start flex-col items-center rounded-[2rem] bg-shell py-6 shadow-(--shadow-lift)">
       <Link href="/dashboard" className="mb-8 block" title="DailyMattr Studio">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-lg font-extrabold text-white shadow-[0_8px_20px_rgba(57,121,255,0.5)]">
+        {/* Pinned to the brand blue rather than the accent token: dark mode
+            lightens the accent for legibility on dark surfaces, which drops the
+            white letter here to 2.97:1. The logo is the one place the colour
+            should not follow the theme. */}
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#3979ff] text-lg font-extrabold text-white shadow-[0_8px_20px_rgba(57,121,255,0.5)]">
           M
         </div>
       </Link>

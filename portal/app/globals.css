@@ -9,13 +9,17 @@
   --color-ink: #141417;
   --color-ink-2: #1b1b1f;
   --color-muted: #6b6b73;
-  --color-faint: #a3a3ac;
+  /* Metadata — timestamps, sources, counters. Was #a3a3ac, which is 2.3:1 on
+     white: legible as a shape, not as text. Darkened to clear 3:1 while
+     staying clearly quieter than `muted`. */
+  --color-faint: #7d7d88;
   --color-accent: #3979ff;
   --color-accent-deep: #2255d4;
   --color-tint: rgba(57, 121, 255, 0.1);
   --color-mint: #16a34a;
   --color-mint-tint: rgba(34, 197, 94, 0.12);
-  --color-amber: #d97706;
+  /* Amber on its own tint was 2.9:1 — the darker step clears the floor. */
+  --color-amber: #b45309;
   --color-amber-tint: rgba(245, 158, 11, 0.14);
   --color-rose: #e11d48;
   --color-rose-tint: rgba(244, 63, 94, 0.1);

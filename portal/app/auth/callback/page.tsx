@@ -58,7 +58,7 @@ export default function AuthCallbackPage() {
   }, [ready, user, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#fafafc] p-6">
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-6">
       <div className="card flex max-w-sm flex-col items-center gap-4 p-8 text-center">
         {errorMsg ? (
           <>

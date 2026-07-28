@@ -128,7 +128,7 @@ export default function MediaDrop({
         } ${
           drag
             ? "border-accent bg-tint"
-            : "border-line bg-[#fafafc] hover:border-accent/50 hover:bg-tint/50"
+            : "border-line bg-field hover:border-accent/50 hover:bg-tint/50"
         }`}
       >
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent shadow-sm">
