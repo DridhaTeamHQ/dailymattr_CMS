@@ -23,7 +23,6 @@ import {
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
-import { TraxCard } from "@/components/TraxCard";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
@@ -135,10 +134,10 @@ export default function KindListPage() {
   const preview = items.find((c) => c.id === previewId) ?? null;
   const queue = items.filter((c) => c.status === "in_review");
   const feed = items.filter((c) => c.status === "published");
-  // Pix, Qix, and Trax share the poster-tile library grid format.
-  const cardGrid = kind === "pix" || kind === "qix" || kind === "trax";
+  // Pix and Qix share the poster-tile library; Trax stays a plain list.
+  const cardGrid = kind === "pix" || kind === "qix";
   const visible =
-    tab === "all" ? items : tab === "queue" ? queue : feed;
+    !cardGrid || tab === "all" ? items : tab === "queue" ? queue : feed;
 
   // Approving or deleting can empty the last page, so clamp before slicing.
   const size = PAGE_SIZES.pixGrid;
@@ -268,13 +267,8 @@ export default function KindListPage() {
         </div>
       </SectionHeader>
 
-<<<<<<< Updated upstream
       {cardGrid && items.length > 0 && (
         <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
-=======
-      {items.length > 0 && (
-        <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-(--shadow-soft)">
->>>>>>> Stashed changes
           {GRID_TABS.map(([t, label, count]) => (
             <button
               key={t}
@@ -316,7 +310,6 @@ export default function KindListPage() {
             before publishing.
           </p>
         </div>
-<<<<<<< Updated upstream
       ) : cardGrid ? (
         visible.length === 0 ? (
           <div className="card flex flex-col items-center gap-2 p-14 text-center">
@@ -438,69 +431,7 @@ export default function KindListPage() {
               </motion.div>
             );
           })}
-=======
-      ) : visible.length === 0 ? (
-        <div className="card flex flex-col items-center gap-2 p-14 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
-            <Check size={20} />
-          </span>
-          <p className="font-bold">
-            {tab === "queue" ? "Queue is clear" : "Nothing live yet"}
-          </p>
-          <p className="max-w-xs text-sm text-muted">
-            {tab === "queue"
-              ? `${meta.label} submitted by writers land here for review.`
-              : `Approved ${meta.label} appear here once the chief editor publishes them.`}
-          </p>
->>>>>>> Stashed changes
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {paged.map((c, i) => {
-              const author = users.find((u) => u.id === c.createdBy)?.fullName;
-              const actions = reviewer ? reviewActions(c) : undefined;
-              return (
-                <motion.div
-                  key={c.id}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i * 0.05, 0.3), duration: 0.4 }}
-                >
-                  {isQix ? (
-                    <QixCard
-                      item={c}
-                      author={author}
-                      onView={() => setActiveVideo(c)}
-                      actions={actions}
-                    />
-                  ) : kind === "trax" ? (
-                    <TraxCard
-                      item={c}
-                      author={author}
-                      onView={() => setActiveVideo(c)}
-                      actions={actions}
-                    />
-                  ) : (
-                    <PixCard
-                      item={c}
-                      author={author}
-                      onView={() => setPreviewId(c.id)}
-                      actions={actions}
-                    />
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
-          <Pager
-            page={current}
-            total={visible.length}
-            size={size}
-            onPage={setPage}
-            label={meta.label}
-          />
-        </>
       )}
 
       {/* ── QUICK SHORTS VIDEO MODAL ───────────────────────────────────── */}
@@ -606,7 +537,7 @@ export default function KindListPage() {
 
                 <div className="mt-6 flex items-center gap-3 pt-4 border-t border-line">
                   <Link
-                    href={`/content/${activeVideo.kind}/editor?id=${activeVideo.id}`}
+                    href={`/content/qix/editor?id=${activeVideo.id}`}
                     onClick={() => setActiveVideo(null)}
                     className="btn-accent flex-1 flex items-center justify-center gap-2 py-3 text-sm"
                   >
