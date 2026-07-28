@@ -92,6 +92,25 @@ export function isPlaceholderUrl(url: string | null | undefined): boolean {
   return UNRESOLVABLE_TLD.test(host + "/") || UNRESOLVABLE_HOST.test(s);
 }
 
+/* Hosts that exist, but only on the machine that asks for them.
+ *
+ * `localhost` on a phone is the phone. A Qix is live right now pointing at
+ * http://localhost:3000/api/media/… — a perfectly well-formed absolute URL
+ * that resolves for whoever is sitting at the CMS and for nobody else. It is
+ * a worse failure than a relative path, because it *looks* fixed. */
+const PRIVATE_HOST =
+  /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|.*\.local)$/i;
+
+export function isUnreachableHost(url: string | null | undefined): boolean {
+  const s = (url ?? "").trim();
+  if (!s) return false;
+  try {
+    return PRIVATE_HOST.test(new URL(s).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Why this item cannot go live, or null if it can. One sentence, addressed to
  * the editor — it is shown to them verbatim.
@@ -113,6 +132,9 @@ export function mediaBlocker(
   }
   if (isPlaceholderUrl(s)) {
     return `That host is a reserved placeholder that can never resolve, so the ${noun} would 404 on every device. Point it at the real file.`;
+  }
+  if (isUnreachableHost(s)) {
+    return `That ${noun} is on localhost, which on a reader's phone means their phone. Set MEDIA_BASE_URL to a public address and re-import, or host the file somewhere the app can reach.`;
   }
   if (kind === "trax" && !isPlayableAudio(s)) {
     return HTTP_RE.test(s)
