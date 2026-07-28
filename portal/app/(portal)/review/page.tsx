@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Eye, Rocket, ShieldCheck, XCircle } from "lucide-react";
 import { Pager } from "@/components/Pager";
-import { PixFrame, PixPreviewModal } from "@/components/PixCard";
+import { PixFrame } from "@/components/PixCard";
+import ReviewEditModal from "@/components/ReviewEditModal";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import { filledPixPoints } from "@/lib/pix";
 import { stripHighlightBrackets } from "@/lib/pixComposer";
-import { listContent, listUsers, setContentStatus } from "@/lib/db";
+import { listContent, listUsers, logAudit, setContentStatus, updateContent } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { KIND_META, type CmsUser, type ContentItem } from "@/lib/types";
@@ -79,12 +80,12 @@ function Row({
         </p>
       </div>
       <div className="flex shrink-0 gap-2">
-        {isPix && onPreview && (
+        {onPreview && (
           <button
             onClick={onPreview}
             className="btn-ghost flex items-center gap-1.5 px-4 py-2 text-xs"
           >
-            <Eye size={14} /> Preview
+            <Eye size={14} /> Open
           </button>
         )}
         {actions}
@@ -251,9 +252,15 @@ export default function ReviewPage() {
         </>
       )}
 
-      <PixPreviewModal
+      <ReviewEditModal
         item={preview}
+        canEdit={can.editInReview(user.role)}
         onClose={() => setPreviewId(null)}
+        onSave={async (id, patch) => {
+          const saved = await updateContent(id, patch);
+          await logAudit(user, "edited in review", saved.kind, saved.title);
+          refetch();
+        }}
         actions={
           preview?.status === "in_review" ? (
             <>

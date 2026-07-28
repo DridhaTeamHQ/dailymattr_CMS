@@ -168,4 +168,11 @@ export const can = {
   manageUsers: (r: Role) => r === "super_admin",
   manageCategories: (r: Role) => r === "chief_editor" || r === "super_admin",
   editAny: (r: Role) => r === "chief_editor" || r === "super_admin",
+  /**
+   * Fix a submission during review rather than bouncing it back for a typo.
+   * The database already permits this — content_update_reviewers covers the
+   * same three roles — so this only decides whether the UI offers it.
+   */
+  editInReview: (r: Role) =>
+    r === "qa" || r === "chief_editor" || r === "super_admin",
 };
