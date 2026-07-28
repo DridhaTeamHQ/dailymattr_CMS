@@ -9,6 +9,7 @@ import {
   FileEdit,
   Sparkles,
 } from "lucide-react";
+import ActivityChart from "@/components/ActivityChart";
 import FormatChart from "@/components/FormatChart";
 import { Avatar, FactBadge, Pill, SectionHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
@@ -135,8 +136,13 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         {/* chart card */}
-        <div className="card p-6">
-          <FormatChart data={byKind} />
+        <div className="card space-y-6 p-6">
+          <ActivityChart items={data.content} />
+          {/* Kept below the trend as the standing position — the two answer
+              different questions: what shipped lately, and what is live now. */}
+          <div className="border-t border-line pt-6">
+            <FormatChart data={byKind} />
+          </div>
         </div>
 
         {/* activity */}
