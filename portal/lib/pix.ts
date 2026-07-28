@@ -11,8 +11,18 @@ import type { ContentItem } from "./types";
 /** The card surface itself — dark in both themes. */
 export const PIX_PANEL = "#0C111D";
 export const PIX_BRAND = "#3979FF";
-/** Marked words in the headline. The app ships one per theme. */
-export const PIX_BRAND_LIGHT = "#7AA5FF";
+/**
+ * Marked words in the headline. The app ships one per theme — the card surface
+ * is dark either way, but the accent follows the reader's theme. Rendering goes
+ * through `--pix-brand-light`, which flips on prefers-color-scheme; these two
+ * constants are the values behind it.
+ */
+export const PIX_BRAND_LIGHT_DARK = "#7AA5FF";
+export const PIX_BRAND_LIGHT_LIGHT = "#6694FF";
+/** The marked-word blue the CMS renders — matched by the builder canvas. */
+export const PIX_BRAND_LIGHT = PIX_BRAND_LIGHT_DARK;
+/** Use this in styles so the theme switch happens in CSS, not JavaScript. */
+export const PIX_BRAND_LIGHT_VAR = "var(--pix-brand-light)";
 export const PIX_PILL_FILL = "rgba(11, 13, 18, 0.42)";
 export const PIX_ACTION_FILL = "rgba(11, 13, 18, 0.44)";
 export const PIX_ACTION_RING = "rgba(255, 255, 255, 0.26)";

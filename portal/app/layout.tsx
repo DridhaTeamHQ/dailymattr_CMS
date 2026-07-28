@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Inter, Plus_Jakarta_Sans, Geist } from "next/font/google";
+import {
+  Be_Vietnam_Pro,
+  Geist,
+  Inter,
+  Plus_Jakarta_Sans,
+  Poppins,
+  Roboto_Serif,
+} from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -26,6 +33,21 @@ const inter = Inter({
   weight: ["400", "500", "600", "700"],
 });
 
+// The Pix Post Builder sets its poster headline in Roboto Serif 600. The
+// composer reads this variable and hands the resolved family to the canvas.
+const robotoSerif = Roboto_Serif({
+  variable: "--font-roboto-serif",
+  subsets: ["latin"],
+  weight: ["600"],
+});
+
+// Body copy on the builder's Text screen.
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  weight: ["700"],
+});
+
 export const metadata: Metadata = {
   title: "DailyMattr Studio — CMS",
   description: "Uploading platform for the DailyMattr app",
@@ -39,7 +61,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", bvp.variable, jakarta.variable, inter.variable, "font-sans", geist.variable)}
+      className={cn(
+        "h-full",
+        "antialiased",
+        bvp.variable,
+        jakarta.variable,
+        inter.variable,
+        robotoSerif.variable,
+        poppins.variable,
+        "font-sans",
+        geist.variable
+      )}
     >
       <body className="min-h-full font-sans">
         <AuthProvider>{children}</AuthProvider>

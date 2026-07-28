@@ -9,7 +9,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
-import { markHeadline } from "@/lib/pixHighlight";
+import { markPixHeadline } from "@/lib/pixHighlight";
 import {
   PIX_ACTION_FILL,
   PIX_ACTION_RING,
@@ -122,7 +122,13 @@ function Pills({ item }: { item: ContentItem }) {
   );
 }
 
-/** Headline with the marked words in brandLight, then the 34 × 3 accent bar. */
+/**
+ * Headline, then the 34 × 3 accent bar.
+ *
+ * Jakarta 800 with marked words in brandLight, per the format spec. The
+ * builder canvas is set to match exactly, so the two previews on the editor
+ * screen show one headline treatment rather than two.
+ */
 function Headline({ text }: { text: string }) {
   const { size, line, tracking, weight } = PIX_TYPE.headline;
   const bar = PIX_CHROME.accentBar;
@@ -140,7 +146,7 @@ function Headline({ text }: { text: string }) {
           ...clamp(PIX_LINES.headline),
         }}
       >
-        {markHeadline(text).map((seg, i) => (
+        {markPixHeadline(text).map((seg, i) => (
           <span key={i} style={seg.marked ? { color: PIX_BRAND_LIGHT } : undefined}>
             {seg.text}
           </span>
@@ -309,7 +315,10 @@ function Publisher({ item, opacity }: { item: ContentItem; opacity: number }) {
         whiteSpace: "nowrap",
       }}
     >
-      DailyMattr{item.state ? ` · ${item.state}` : ""}
+      {/* Credit the origin when there is one — every Pix should carry it. */}
+      DailyMattr
+      {item.sourceLinks[0]?.title ? ` · ${item.sourceLinks[0].title}` : ""}
+      {item.state ? ` · ${item.state}` : ""}
     </span>
   );
 }
@@ -385,12 +394,16 @@ export function PixPoster({
             overflow: "hidden",
           }}
         >
-          {/* Photograph — sits on the card colour, so the panel starts where it ends. */}
+          {/* Photograph — sits on the card colour, so the panel starts where it
+              ends. On slide two it goes full bleed and carries the whole card. */}
           <div
             style={{
               position: "absolute",
               inset: 0,
-              height: photoH,
+              // Full bleed on slide two. Switched rather than animated —
+              // transitioning height forces layout on every frame, and the
+              // veil fading in already covers the change.
+              height: onPoints ? "100%" : photoH,
               overflow: "hidden",
             }}
           >
@@ -424,15 +437,19 @@ export function PixPoster({
                 <ImageIcon size={34} />
               </span>
             )}
-            {/* Six-stop scrim over the lower ~72%, so the photo dissolves into the panel. */}
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background:
-                  "linear-gradient(to bottom, rgba(12,17,29,0) 28%, rgba(12,17,29,0.10) 44%, rgba(12,17,29,0.28) 58%, rgba(12,17,29,0.52) 72%, rgba(12,17,29,0.80) 86%, rgba(12,17,29,1) 100%)",
-              }}
-            />
+            {/* Six-stop scrim over the lower ~72%, so the photo dissolves into
+                the panel. Slide two has no panel to dissolve into — the veil
+                does that job there. */}
+            {!onPoints && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(to bottom, rgba(12,17,29,0) 28%, rgba(12,17,29,0.10) 44%, rgba(12,17,29,0.28) 58%, rgba(12,17,29,0.52) 72%, rgba(12,17,29,0.80) 86%, rgba(12,17,29,1) 100%)",
+                }}
+              />
+            )}
           </div>
 
           {/* Slide two: 78% veil plus the topic wash, full bleed. */}

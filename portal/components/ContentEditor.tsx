@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save, Send, Sparkles } from "lucide-react";
 import MediaDrop from "@/components/MediaDrop";
+import PixComposer from "@/components/PixComposer";
 import { PixBezel } from "@/components/PixPoster";
 import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
@@ -19,13 +20,8 @@ import {
   upsertContent,
 } from "@/lib/store";
 import {
-  PIX_CHARS_PER_LINE,
-  PIX_LINES,
   PIX_POINT_COUNT,
-  PIX_POINT_MAX,
-  PIX_TITLE_MAX,
   getPixPoints,
-  pixLines,
   pixSummary,
   type PixPlacement,
 } from "@/lib/pix";
@@ -152,23 +148,19 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const isPix = kind === "pix";
   const points = getPixPoints(item);
   const filledPoints = points.filter((p) => p.trim()).length;
-  const titleLines = {
-    list: pixLines(item.title, PIX_CHARS_PER_LINE.headlineList),
-    page: pixLines(item.title, PIX_CHARS_PER_LINE.headlinePage),
-  };
   const blue = markReport(item.title);
 
-  const setPoint = (idx: number, value: string) =>
-    setItem((it) => {
-      if (!it) return it;
-      const next = getPixPoints(it);
-      next[idx] = value.slice(0, PIX_POINT_MAX);
-      return {
-        ...it,
-        body: { ...it.body, points: next },
-        summary: pixSummary(next),
-      };
-    });
+  /** Key points live on the item; the summary is kept in step for other views. */
+  const setPoints = (next: string[]) =>
+    setItem((it) =>
+      it
+        ? {
+            ...it,
+            body: { ...it.body, points: next },
+            summary: pixSummary(next),
+          }
+        : it
+    );
 
   /** Fills the form from a scraped source. Returns the field names it touched. */
   const applyImport = (d: ImportedArticle, overwrite: boolean): string[] => {
@@ -236,7 +228,9 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   return (
     <div
       className={`mx-auto pb-12 ${
-        kind === "qix" || isPix ? "max-w-5xl" : "max-w-3xl"
+        // Pix fills the shell — the builder needs every pixel it can get, and
+        // the portal layout already caps content at 1440.
+        isPix ? "max-w-none" : kind === "qix" ? "max-w-5xl" : "max-w-3xl"
       }`}
     >
       <button
@@ -463,7 +457,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         <div
           className={
             isPix
-              ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_252px]"
+              ? "grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"
               : undefined
           }
         >
@@ -472,95 +466,22 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             <SourceImport onImport={applyImport} disabled={!editable} />
           )}
 
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="label">{isPix ? "Headline" : "Title"}</div>
-              {isPix && (
-                <span
-                  className={`text-[11px] font-bold tabular-nums ${
-                    titleLines.list > PIX_LINES.headline
-                      ? "text-rose"
-                      : item.title.length > PIX_TITLE_MAX * 0.9
-                        ? "text-amber"
-                        : "text-faint"
-                  }`}
-                >
-                  {item.title.length} / {PIX_TITLE_MAX} · {titleLines.list} of{" "}
-                  {PIX_LINES.headline} lines
-                </span>
-              )}
-            </div>
-            <input
-              className="field text-[15px] font-semibold"
-              value={item.title}
-              maxLength={isPix ? PIX_TITLE_MAX : undefined}
-              disabled={!editable}
-              onChange={(e) => set("title", e.target.value)}
-              placeholder={`A sharp ${meta.label.replace(/s$/, "").toLowerCase()} title…`}
-            />
-            {isPix && (
-              <p className="mt-2 text-[11px] text-faint">
-                Four lines on both placements — about{" "}
-                {PIX_CHARS_PER_LINE.headlineList} characters per line in the
-                feed card, {PIX_CHARS_PER_LINE.headlinePage} on the reader page.
-                Anything longer is truncated, not wrapped.
-              </p>
-            )}
-          </div>
-
-          {isPix ? (
+          {/* Pix types its headline and key points inside the builder, next to
+              the poster they land on — see the Poster block below. */}
+          {!isPix && (
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <div className="label">Key points</div>
-                <span
-                  className={`text-[11px] font-bold tabular-nums ${
-                    filledPoints === PIX_POINT_COUNT ? "text-mint" : "text-faint"
-                  }`}
-                >
-                  {filledPoints} / {PIX_POINT_COUNT}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {points.map((p, i) => {
-                  const lines = pixLines(p, PIX_CHARS_PER_LINE.point);
-                  return (
-                    <div key={i} className="flex items-center gap-2">
-                      <span
-                        className="h-[7px] w-[7px] shrink-0 rounded-[4px]"
-                        style={{ background: "var(--color-accent)" }}
-                      />
-                      <input
-                        className="field"
-                        value={p}
-                        maxLength={PIX_POINT_MAX}
-                        disabled={!editable}
-                        onChange={(e) => setPoint(i, e.target.value)}
-                        placeholder={`Point ${i + 1} — one fact, up to ${PIX_LINES.point} lines…`}
-                      />
-                      <span
-                        className={`w-20 shrink-0 text-right text-[11px] font-bold tabular-nums ${
-                          lines > PIX_LINES.point
-                            ? "text-rose"
-                            : p.length > PIX_POINT_MAX * 0.9
-                              ? "text-amber"
-                              : "text-faint"
-                        }`}
-                      >
-                        {p.length} / {PIX_POINT_MAX}
-                        <span className="block font-medium text-faint">
-                          {lines}/{PIX_LINES.point} lines
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-[11px] text-faint">
-                Exactly {PIX_POINT_COUNT} points — slide two has three slots and
-                all of them are required before submitting for review.
-              </p>
+              <div className="label mb-2">Title</div>
+              <input
+                className="field text-[15px] font-semibold"
+                value={item.title}
+                disabled={!editable}
+                onChange={(e) => set("title", e.target.value)}
+                placeholder={`A sharp ${meta.label.replace(/s$/, "").toLowerCase()} title…`}
+              />
             </div>
-          ) : (
+          )}
+
+          {!isPix && (
           <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="label">
@@ -574,7 +495,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 >
                   {wordCount}/60 words
                 </span>
-              )}
+          )}
             </div>
             <textarea
               className="field min-h-28 resize-y leading-relaxed"
@@ -625,6 +546,39 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             </div>
           </div>
 
+          {isPix ? (
+            /* Pix builds its poster here rather than dropping a bare cover. */
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="label">Poster</div>
+                <span className="text-[11px] font-semibold text-faint">
+                  Pix Post Builder
+                </span>
+              </div>
+              <PixComposer
+                headline={item.title}
+                onHeadline={(v) => set("title", v)}
+                points={points}
+                onPoints={setPoints}
+                source={item.sourceLinks[0] ?? null}
+                onSource={(s) => set("sourceLinks", s ? [s] : [])}
+                coverUrl={item.coverUrl}
+                disabled={!editable}
+                onCommit={(dataUrl) => set("coverUrl", dataUrl)}
+              />
+              <input
+                className="field mt-3"
+                value={
+                  item.coverUrl && !item.coverUrl.startsWith("data:")
+                    ? item.coverUrl
+                    : ""
+                }
+                disabled={!editable}
+                onChange={(e) => set("coverUrl", e.target.value || null)}
+                placeholder="…or paste an image URL to build from"
+              />
+            </div>
+          ) : (
           <div>
             <div className="label mb-2">Cover image</div>
             <MediaDrop
@@ -643,6 +597,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               placeholder="…or paste an image URL"
             />
           </div>
+          )}
 
           {kind === "trax" && (
             <div className="grid gap-5 sm:grid-cols-[1fr_140px]">
@@ -723,7 +678,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         </div>
 
         {isPix && (
-          <aside className="h-fit lg:sticky lg:top-6">
+          <aside className="h-fit xl:sticky xl:top-4">
             <div className="card p-4">
               <div className="mb-3 flex items-center gap-1 rounded-full bg-canvas p-1">
                 {(
@@ -784,36 +739,38 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="sticky bottom-4 mt-5 flex items-center justify-between gap-3 rounded-full bg-ink p-2 pl-6 shadow-(--shadow-pop) z-30"
+          // A compact pill hugged to the right, rather than a full-width bar —
+          // it only holds two buttons and a status line.
+          className="sticky bottom-4 z-30 mt-5 ml-auto flex w-fit max-w-full items-center gap-2 rounded-full bg-ink p-1.5 pl-4 shadow-(--shadow-pop)"
         >
-          <span className="text-xs font-medium text-white/60">
+          <span className="hidden text-[11px] font-medium whitespace-nowrap text-white/55 sm:block">
             {saved === "draft"
               ? "Draft saved ✓"
               : saved === "review"
                 ? "Sent to QA ✓"
                 : item.status === "rejected"
                   ? "Revise and resubmit"
-                  : "Autosaves locally in demo mode"}
+                  : "Autosaves locally"}
           </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => persist(false)}
-              disabled={!item.title}
-              className="flex items-center gap-2 rounded-full bg-white/10 px-5 py-2.5 text-xs font-bold text-white transition-all hover:bg-white/20 active:scale-95 disabled:opacity-40"
-            >
-              <Save size={14} /> Save draft
-            </button>
-            <button
-              onClick={() => persist(true)}
-              disabled={
-                !item.title ||
-                (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
-              }
-              className="btn-accent flex items-center gap-2 px-5 py-2.5 text-xs disabled:opacity-40"
-            >
-              <Send size={14} /> Submit for review
-            </button>
-          </div>
+          <button
+            onClick={() => persist(false)}
+            disabled={!item.title}
+            title="Save draft"
+            className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold whitespace-nowrap text-white transition-all hover:bg-white/20 active:scale-95 disabled:opacity-40"
+          >
+            <Save size={12} /> Draft
+          </button>
+          <button
+            onClick={() => persist(true)}
+            disabled={
+              !item.title ||
+              (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
+            }
+            title="Submit for review"
+            className="btn-accent flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] whitespace-nowrap disabled:opacity-40"
+          >
+            <Send size={12} /> Submit
+          </button>
         </motion.div>
       )}
     </div>

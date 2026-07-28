@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Eye, Pencil } from "lucide-react";
 import { PixBezel } from "@/components/PixPoster";
+import { stripHighlightBrackets } from "@/lib/pixComposer";
 import { Modal, Pill, StatusPill } from "@/components/ui";
 import {
   PIX_CHARS_PER_LINE,
@@ -39,7 +40,9 @@ export function PixFrame({
           onClick();
         }
       }}
-      aria-label={onClick ? `Preview ${item.title}` : undefined}
+      aria-label={
+        onClick ? `Preview ${stripHighlightBrackets(item.title)}` : undefined
+      }
       className={`rounded-[26px] shadow-(--shadow-soft) ${
         onClick
           ? "cursor-pointer transition-transform duration-200 hover:-translate-y-1 hover:shadow-(--shadow-lift)"
@@ -169,7 +172,7 @@ export function PixPreviewModal({
   actions?: React.ReactNode;
 }) {
   return (
-    <Modal open={!!item} onClose={onClose} title="Pix preview">
+    <Modal open={!!item} onClose={onClose} title="Pix preview" size="md">
       {/* Keyed on the id so each Pix opens fresh on the feed placement. */}
       {item && (
         <PreviewBody
@@ -230,7 +233,7 @@ function PreviewBody({
 
           <div className="min-w-0 flex-1">
             <p className="mb-3 text-[15px] leading-snug font-bold">
-              {item.title}
+              {stripHighlightBrackets(item.title)}
             </p>
             <ul className="space-y-2">
               {filledPixPoints(item).map((p, i) => (

@@ -10,6 +10,7 @@ import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import { filledPixPoints } from "@/lib/pix";
+import { stripHighlightBrackets } from "@/lib/pixComposer";
 import { getContent, getUsers, setStatus, timeAgo } from "@/lib/store";
 import { useStore } from "@/lib/useStore";
 import { KIND_META, type CmsUser, type ContentItem } from "@/lib/types";
@@ -57,7 +58,7 @@ function Row({
           <StatusPill status={c.status} />
         </div>
         <p className={`text-[14px] font-bold ${isPix ? "" : "truncate"}`}>
-          {c.title}
+          {isPix ? stripHighlightBrackets(c.title) : c.title}
         </p>
         {isPix && points.length > 0 && (
           <ul className="mt-2 space-y-1">

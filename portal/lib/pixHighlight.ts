@@ -53,6 +53,47 @@ const isProper = (c: string) => {
 
 export type PixSegment = { text: string; marked: boolean };
 
+const HAS_BRACKETS = /[[\](){}]/;
+
+/**
+ * The one marking rule both previews use.
+ *
+ * If the writer bracketed anything, that is a deliberate choice and wins.
+ * Otherwise the automatic on-device rule decides, so a plain headline still
+ * gets its figures and names picked out. Either way the brackets themselves
+ * never render.
+ */
+export function markPixHeadline(headline: string): PixSegment[] {
+  if (!HAS_BRACKETS.test(headline)) return markHeadline(headline);
+
+  const out: PixSegment[] = [];
+  let open = false;
+
+  for (const raw of headline.split(/(\s+)/)) {
+    if (!raw) continue;
+    if (!raw.trim()) {
+      if (out.length) out[out.length - 1].text += raw;
+      else out.push({ text: raw, marked: false });
+      continue;
+    }
+
+    const opening = /[[({]/.test(raw);
+    const closing = /[\])}]/.test(raw);
+    if (opening) open = true;
+
+    const word = raw.replace(/[[\](){}]/g, "");
+    if (word) {
+      const last = out[out.length - 1];
+      if (last && last.marked === open) last.text += word;
+      else out.push({ text: word, marked: open });
+    }
+
+    if (closing) open = false;
+  }
+
+  return out;
+}
+
 /**
  * Splits a headline into runs of marked / unmarked text. Adjacent marked words
  * land in the same segment, so "PM Modi" reads as one blue run.

@@ -111,7 +111,7 @@ export default function ArticlePreview({
   };
 
   return (
-    <Modal open={!!article} onClose={onClose} title="App preview" wide>
+    <Modal open={!!article} onClose={onClose} title="App preview" size="lg">
       <div className="grid gap-8 md:grid-cols-[300px_1fr]">
         {/* ── phone ───────────────────────────────────────── */}
         <div className="mx-auto">

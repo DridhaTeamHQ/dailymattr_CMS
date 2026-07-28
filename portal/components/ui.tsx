@@ -84,14 +84,16 @@ export function Modal({
   onClose,
   title,
   children,
-  wide,
+  size = "sm",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  wide?: boolean;
+  /** sm — a single column of fields. md — two columns. lg — the reader. */
+  size?: "sm" | "md" | "lg";
 }) {
+  const width = { sm: "max-w-lg", md: "max-w-2xl", lg: "max-w-3xl" }[size];
   return (
     <AnimatePresence>
       {open && (
@@ -106,9 +108,7 @@ export function Modal({
             onClick={onClose}
           />
           <motion.div
-            className={`card relative z-10 max-h-[88vh] w-full overflow-y-auto p-7 shadow-(--shadow-pop) ${
-              wide ? "max-w-3xl" : "max-w-lg"
-            }`}
+            className={`card relative z-10 max-h-[88vh] w-full overflow-y-auto p-7 shadow-(--shadow-pop) ${width}`}
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
