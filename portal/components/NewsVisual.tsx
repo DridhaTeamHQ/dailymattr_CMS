@@ -12,14 +12,19 @@ export default function NewsVisual({
   src,
   imageHeight = "58%",
   blur = "blur-2xl",
+  priority = false,
   children,
 }: {
   src: string;
   /** How much of the frame the sharp image occupies before it fades out. */
   imageHeight?: string;
   blur?: string;
+  /** Set on the one visual that is the focus of the screen — the phone
+   *  preview — so it is not deferred behind a grid of cards. */
+  priority?: boolean;
   children?: React.ReactNode;
 }) {
+  const loading = priority ? undefined : ("lazy" as const);
   return (
     <>
       {/* colour wash */}
@@ -28,6 +33,8 @@ export default function NewsVisual({
         src={src}
         alt=""
         aria-hidden
+        loading={loading}
+        decoding="async"
         className={`pointer-events-none absolute inset-0 h-full w-full scale-150 object-cover ${blur}`}
       />
       {/* deepen the wash so white type stays readable */}
@@ -38,6 +45,8 @@ export default function NewsVisual({
       <img
         src={src}
         alt=""
+        loading={loading}
+        decoding="async"
         className="pointer-events-none absolute inset-x-0 top-0 w-full object-cover"
         style={{
           height: imageHeight,

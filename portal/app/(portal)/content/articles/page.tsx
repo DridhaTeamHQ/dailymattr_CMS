@@ -458,6 +458,8 @@ export default function ArticlesPage() {
                         <img
                           src={sel.imageOverride ?? art.imageUrl}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className="h-16 w-24 shrink-0 rounded-xl object-cover"
                         />
                         <span className="min-w-0">
@@ -561,6 +563,8 @@ export default function ArticlesPage() {
                       <img
                         src={c.coverUrl}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         className="h-16 w-24 shrink-0 rounded-xl object-cover"
                       />
                     ) : (

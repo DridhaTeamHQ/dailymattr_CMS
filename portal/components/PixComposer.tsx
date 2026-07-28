@@ -1008,6 +1008,7 @@ export default function PixComposer({
                         src={s.preview}
                         alt={s.alt}
                         loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover transition-transform group-hover:scale-105"
                       />
                     </button>

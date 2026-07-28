@@ -194,7 +194,11 @@ export default function ArticlePreview({
             className="w-[300px] rounded-[2.4rem] bg-black p-[7px] shadow-(--shadow-pop)"
           >
             <div className="relative h-[610px] overflow-hidden rounded-[2rem] bg-black">
-              <NewsVisual src={image || article.imageUrl} imageHeight="52%" />
+              <NewsVisual
+                src={image || article.imageUrl}
+                imageHeight="52%"
+                priority
+              />
 
               <StatusBar />
 

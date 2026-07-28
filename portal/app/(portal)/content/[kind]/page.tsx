@@ -397,6 +397,8 @@ export default function KindListPage() {
                       <img
                         src={c.coverUrl}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         className="h-36 w-full object-cover"
                       />
                     ) : (
@@ -475,6 +477,7 @@ export default function KindListPage() {
                       <img
                         src={activeVideo.coverUrl}
                         alt={activeVideo.title}
+                        decoding="async"
                         className="h-44 w-44 rounded-2xl object-cover shadow-2xl ring-1 ring-white/10"
                       />
                     ) : (
@@ -516,6 +519,7 @@ export default function KindListPage() {
                   <img
                     src={activeVideo.coverUrl}
                     alt={activeVideo.title}
+                    decoding="async"
                     className="h-full w-full object-cover"
                   />
                 ) : (

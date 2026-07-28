@@ -88,7 +88,14 @@ export default function MediaDrop({
           />
         ) : (
           /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={value} alt="Media preview" className="h-full w-full object-cover" />
+          // Not lazy: this is the file the user just picked, so it is the one
+          // thing they are waiting to see.
+          <img
+            src={value}
+            alt="Media preview"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
         )}
         <button
           type="button"

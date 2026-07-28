@@ -223,6 +223,8 @@ export default function DashboardPage() {
                 <img
                   src={art.imageUrl}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
                   className="h-20 w-28 shrink-0 rounded-xl object-cover"
                 />
                 <div className="min-w-0">

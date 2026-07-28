@@ -412,6 +412,8 @@ export function PixPoster({
               <img
                 src={item.coverUrl}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 style={{
                   width: "100%",
                   height: "100%",
