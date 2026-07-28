@@ -28,6 +28,9 @@ interface AuthCtx {
     password: string,
     role: Role
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  loginWithGoogle: (
+    role?: Role
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -36,27 +39,56 @@ const Ctx = createContext<AuthCtx>({
   user: null,
   ready: false,
   login: async () => ({ ok: false, error: "not ready" }),
+  loginWithGoogle: async () => ({ ok: false, error: "not ready" }),
   logout: async () => {},
   refresh: async () => {},
 });
 
-async function loadProfile(userId: string): Promise<CmsUser | null> {
-  const { data, error } = await supabase
+async function loadProfile(
+  userId: string,
+  email?: string
+): Promise<CmsUser | null> {
+  const { data: byId } = await supabase
     .from("cms_users")
     .select("*")
     .eq("id", userId)
     .maybeSingle();
-  if (error || !data) return null;
-  return {
-    id: data.id,
-    email: data.email,
-    fullName: data.full_name,
-    role: data.role,
-    languages: data.languages ?? [],
-    states: data.states ?? [],
-    isActive: data.is_active,
-    avatarHue: data.avatar_hue ?? 220,
-  };
+
+  if (byId) {
+    return {
+      id: byId.id,
+      email: byId.email,
+      fullName: byId.full_name,
+      role: byId.role,
+      languages: byId.languages ?? [],
+      states: byId.states ?? [],
+      isActive: byId.is_active,
+      avatarHue: byId.avatar_hue ?? 220,
+    };
+  }
+
+  if (email) {
+    const { data: byEmail } = await supabase
+      .from("cms_users")
+      .select("*")
+      .ilike("email", email.trim())
+      .maybeSingle();
+
+    if (byEmail) {
+      return {
+        id: byEmail.id,
+        email: byEmail.email,
+        fullName: byEmail.full_name,
+        role: byEmail.role,
+        languages: byEmail.languages ?? [],
+        states: byEmail.states ?? [],
+        isActive: byEmail.is_active,
+        avatarHue: byEmail.avatar_hue ?? 220,
+      };
+    }
+  }
+
+  return null;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -68,12 +100,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       return;
     }
-    const profile = await loadProfile(userId);
-    // A signed-in account with no CMS profile (or a disabled one) has no
-    // business in the Studio — drop the session rather than show a broken shell.
+    const { data: userData } = await supabase.auth.getUser();
+    const authUser = userData?.user;
+    const userEmail = authUser?.email;
+
+    let profile = await loadProfile(userId, userEmail);
+
+    // If the account has no cms_users row yet (e.g. fresh Google OAuth signup), provision one.
+    if (!profile && authUser) {
+      let pendingRole: Role = "writer";
+      if (typeof window !== "undefined") {
+        const storedRole = localStorage.getItem("pending_oauth_role") as Role | null;
+        if (
+          storedRole &&
+          ["super_admin", "chief_editor", "writer", "qa"].includes(storedRole)
+        ) {
+          pendingRole = storedRole;
+        }
+        localStorage.removeItem("pending_oauth_role");
+      }
+
+      const fullName =
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        userEmail?.split("@")[0] ||
+        "CMS Member";
+
+      const { data: created, error: insertErr } = await supabase
+        .from("cms_users")
+        .insert({
+          id: userId,
+          email: userEmail ?? "",
+          full_name: fullName,
+          role: pendingRole,
+          languages: ["en"],
+          states: [],
+          is_active: true,
+          avatar_hue: Math.floor(Math.random() * 360),
+        })
+        .select("*")
+        .maybeSingle();
+
+      if (!insertErr && created) {
+        profile = {
+          id: created.id,
+          email: created.email,
+          fullName: created.full_name,
+          role: created.role,
+          languages: created.languages ?? [],
+          states: created.states ?? [],
+          isActive: created.is_active,
+          avatarHue: created.avatar_hue ?? 220,
+        };
+      } else if (insertErr) {
+        console.warn("CMS profile auto-provision note:", insertErr.message);
+      }
+    }
+
+    // A signed-in account with no CMS profile (or a disabled one) drop session.
     if (!profile || !profile.isActive) {
+      const isGoogleUser = authUser?.app_metadata?.provider === "google";
       await supabase.auth.signOut();
       setUser(null);
+
+      if (isGoogleUser && !profile && typeof window !== "undefined") {
+        const errorParams = new URLSearchParams(window.location.search);
+        errorParams.set("error", "no-studio-profile");
+        window.history.replaceState(null, "", `${window.location.pathname}?${errorParams.toString()}`);
+      }
       return;
     }
     setUser(profile);
@@ -123,8 +217,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
         return { ok: false as const, error: "That account has been deactivated." };
       }
-      // The role picker is a shortcut, not a second credential — but a mismatch
-      // usually means the wrong tile was tapped, so say so plainly.
       if (profile.role !== role) {
         await supabase.auth.signOut();
         return {
@@ -138,6 +230,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const loginWithGoogle = useCallback(async (role?: Role) => {
+    if (typeof window !== "undefined" && role) {
+      localStorage.setItem("pending_oauth_role", role);
+    }
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
+  }, []);
+
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -149,8 +260,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [syncFromSession]);
 
   const value = useMemo(
-    () => ({ user, ready, login, logout, refresh }),
-    [user, ready, login, logout, refresh]
+    () => ({ user, ready, login, loginWithGoogle, logout, refresh }),
+    [user, ready, login, loginWithGoogle, logout, refresh]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

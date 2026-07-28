@@ -30,7 +30,13 @@ export const supabase = createClient(url, key, {
 /** Read-only client for the pipeline database. Never call insert/update here. */
 export const newsstudio =
   nsUrl && nsKey
-    ? createClient(nsUrl, nsKey, { auth: { persistSession: false } })
+    ? createClient(nsUrl, nsKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      })
     : null;
 
 export const hasNewsStudio = () => newsstudio !== null;
