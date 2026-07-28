@@ -136,8 +136,8 @@ export default function KindListPage() {
   const preview = items.find((c) => c.id === previewId) ?? null;
   const queue = items.filter((c) => c.status === "in_review");
   const feed = items.filter((c) => c.status === "published");
-  // Pix and Qix share the poster-tile library; Trax stays a plain list.
-  const cardGrid = kind === "pix" || kind === "qix";
+  // Pix, Qix, and Trax share the 9:16 poster-tile library grid UI.
+  const cardGrid = kind === "pix" || kind === "qix" || kind === "trax";
   const visible =
     !cardGrid || tab === "all" ? items : tab === "queue" ? queue : feed;
 

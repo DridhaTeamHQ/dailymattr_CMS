@@ -66,16 +66,11 @@ export function TraxFrame({
         <AudioLines size={10} className="text-accent" /> LISTEN
       </span>
 
-      {/* Top Right Duration */}
-      {duration && (
-        <span className="absolute top-3 right-3 rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-md">
-          {duration}
-        </span>
-      )}
 
-      {/* Play Hover Button */}
+
+      {/* Audio Waveform Hover Button */}
       <span className="absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
-        <Play size={17} className="ml-0.5 fill-white" />
+        <AudioLines size={18} className="text-white" />
       </span>
 
       {/* Title Overlay at bottom */}
