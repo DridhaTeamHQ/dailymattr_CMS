@@ -10,14 +10,15 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Avatar, Pill } from "@/components/ui";
+import { KIND_COLOR } from "@/lib/palette";
 import { timeAgo } from "@/lib/store";
 import { ROLE_META, type UserPerformance } from "@/lib/types";
 
 const FORMATS = [
-  { key: "createdArticles", label: "Art", full: "Articles", icon: Newspaper },
-  { key: "createdPix", label: "Pix", full: "Pix", icon: ImageIcon },
-  { key: "createdQix", label: "Qix", full: "Qix", icon: Clapperboard },
-  { key: "createdTrax", label: "Trax", full: "Trax", icon: AudioLines },
+  { key: "createdArticles", label: "Art", full: "Articles", icon: Newspaper, color: KIND_COLOR.article },
+  { key: "createdPix", label: "Pix", full: "Pix", icon: ImageIcon, color: KIND_COLOR.pix },
+  { key: "createdQix", label: "Qix", full: "Qix", icon: Clapperboard, color: KIND_COLOR.qix },
+  { key: "createdTrax", label: "Trax", full: "Trax", icon: AudioLines, color: KIND_COLOR.trax },
 ] as const;
 
 const PLOT_H = 52;
@@ -108,12 +109,15 @@ export default function PerformanceCard({
                 <span className="text-[10px] font-extrabold tabular-nums text-ink">
                   {n}
                 </span>
-                {/* A 3px stub keeps zero visible as "none", not "missing". */}
+                {/* A 3px stub keeps zero visible as "none", not "missing".
+                    Colour comes from the shared palette so a format looks the
+                    same here, on the team chart, and on the dashboard. */}
                 <span
-                  className={`w-full rounded-t-[5px] transition-[height] duration-500 ${
-                    n > 0 ? "bg-accent" : "bg-line"
-                  }`}
-                  style={{ height: Math.max(3, h) }}
+                  className="w-full rounded-t-[5px] transition-[height] duration-500"
+                  style={{
+                    height: Math.max(3, h),
+                    background: n > 0 ? f.color : "var(--color-line)",
+                  }}
                 />
               </div>
             );

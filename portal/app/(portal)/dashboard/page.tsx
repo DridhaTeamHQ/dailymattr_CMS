@@ -156,8 +156,12 @@ export default function DashboardPage() {
               View all
             </Link>
           </div>
-          <div className="space-y-1">
-            {data.audit.slice(0, 4).map((a) => (
+          {/* The chart column beside this one is far taller, so a fixed four
+              entries left the card half empty. flex-1 + min-h-0 lets the list
+              take whatever height the row ends up being, and scroll only when
+              there is genuinely more than fits. */}
+          <div className="-mr-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-2">
+            {data.audit.map((a) => (
               <div
                 key={a.id}
                 className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-canvas"

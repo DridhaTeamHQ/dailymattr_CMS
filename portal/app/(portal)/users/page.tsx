@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { BarChart3, Settings2, UserPlus } from "lucide-react";
 import PerformanceCard from "@/components/PerformanceCard";
+import TeamChart from "@/components/TeamChart";
 import { Avatar, Modal, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
@@ -192,9 +193,13 @@ export default function UsersPage() {
       </div>
 
       {tab === "performance" ? (
-        // items-stretch (the grid default) plus h-full on the card means every
-        // card in a row matches the tallest — the sections inside already
-        // render at fixed heights, so in practice they all match.
+        <>
+        {/* Comparison first, then the individual cards. The cards say what a
+            person did; only a shared axis says who did more. */}
+        <TeamChart performance={performance} />
+        {/* items-stretch (the grid default) plus h-full on the card means every
+            card in a row matches the tallest — the sections inside already
+            render at fixed heights, so in practice they all match. */}
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {performance.map((p, i) => (
             <motion.div
@@ -212,6 +217,7 @@ export default function UsersPage() {
             </motion.div>
           ))}
         </div>
+        </>
       ) : (
       <div className="grid gap-4 md:grid-cols-2">
         {users.map((u, i) => (
