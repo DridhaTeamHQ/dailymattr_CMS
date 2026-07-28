@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Save, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Radio, Save, Send, Sparkles } from "lucide-react";
 import MediaDrop from "@/components/MediaDrop";
 import PixComposer from "@/components/PixComposer";
 import { PixBezel } from "@/components/PixPoster";
@@ -247,7 +247,14 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         setSaved("review");
         setTimeout(() => router.push(listHref), 700);
       } else {
-        await logAudit(user, "saved draft", kind, stored.title || "(untitled)");
+        // A correction to a live story is not "saved draft" — the trail has to
+        // read clearly when someone asks who changed what readers saw.
+        await logAudit(
+          user,
+          stored.status === "published" ? "updated the live" : "saved draft",
+          kind,
+          stored.title || "(untitled)"
+        );
         setSaved("draft");
         setTimeout(() => setSaved(null), 1600);
       }
@@ -258,17 +265,13 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     }
   };
 
-  // A writer keeps control of their own work up to the moment it is approved,
-  // so a typo spotted after submitting doesn't need a decline-and-resubmit
-  // round trip. QA and editors can edit anything. This mirrors the RLS policy
-  // exactly — the database enforces the same rule.
-  const ownWorkStillOpen =
-    item.createdBy === user.id &&
-    (item.status === "draft" ||
-      item.status === "rejected" ||
-      item.status === "in_review");
-  const editable =
-    !item.id || ownWorkStillOpen || can.editInReview(user.role);
+  // Anyone signed in can correct anything, at any status — matching the
+  // content_update_any policy. Publishing is still gated separately, so this
+  // widens who can fix a story, not who can push one live.
+  const editable = true;
+  // A live story has no second pair of eyes between the edit and the reader,
+  // so the editor says so rather than letting it feel like any other save.
+  const editingLive = item.status === "published";
 
   return (
     <div
@@ -296,6 +299,17 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         <div className="card mb-5 border-l-4 !border-l-rose p-4 text-sm">
           <span className="font-bold text-rose">QA note: </span>
           {item.reviewNote}
+        </div>
+      )}
+
+      {editingLive && (
+        <div className="card mb-5 flex items-start gap-3 border-l-4 !border-l-amber p-4">
+          <Radio size={16} className="mt-0.5 shrink-0 text-amber" />
+          <p className="text-sm leading-relaxed">
+            <span className="font-bold text-amber">This is live. </span>
+            Readers see it now, and saving updates the app straight away without
+            going back through review. Your name is recorded against the change.
+          </p>
         </div>
       )}
 
@@ -798,7 +812,9 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           ) : (
             <span className="hidden text-[11px] font-medium whitespace-nowrap text-white/55 sm:block">
               {saved === "draft"
-                ? "Draft saved ✓"
+                ? editingLive
+                  ? "Updated in the app ✓"
+                  : "Draft saved ✓"
                 : saved === "review"
                   ? "Sent to QA ✓"
                   : item.status === "rejected"
@@ -808,25 +824,48 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                       : ""}
             </span>
           )}
-          <button
-            onClick={() => persist(false)}
-            disabled={!item.title}
-            title="Save draft"
-            className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold whitespace-nowrap text-white transition-all hover:bg-white/20 active:scale-95 disabled:opacity-40"
-          >
-            <Save size={12} /> Draft
-          </button>
-          <button
-            onClick={() => persist(true)}
-            disabled={
-              !item.title ||
-              (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
-            }
-            title="Submit for review"
-            className="btn-accent flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] whitespace-nowrap disabled:opacity-40"
-          >
-            <Send size={12} /> Submit
-          </button>
+
+          {editingLive ? (
+            /* Submitting a live story would pull it out of the app, which is
+               never what "edit" means here — so it saves in place instead. */
+            <button
+              onClick={() => persist(false)}
+              disabled={!item.title || saving}
+              title="Update the live story"
+              className="btn-accent flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] whitespace-nowrap disabled:opacity-40"
+            >
+              <Save size={12} /> Update live
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => persist(false)}
+                disabled={!item.title || saving}
+                title="Save draft"
+                className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold whitespace-nowrap text-white transition-all hover:bg-white/20 active:scale-95 disabled:opacity-40"
+              >
+                <Save size={12} /> Draft
+              </button>
+              <button
+                onClick={() => persist(true)}
+                disabled={
+                  !item.title ||
+                  saving ||
+                  (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
+                }
+                title={
+                  isPix && filledPoints < PIX_POINT_COUNT
+                    ? `All ${PIX_POINT_COUNT} key points are needed before review`
+                    : !item.summary && !isPix
+                      ? "Add a summary before submitting"
+                      : "Submit for review"
+                }
+                className="btn-accent flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] whitespace-nowrap disabled:opacity-40"
+              >
+                <Send size={12} /> Submit
+              </button>
+            </>
+          )}
         </motion.div>
       )}
     </div>

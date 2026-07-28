@@ -152,9 +152,19 @@ export default function KindListPage() {
     ["feed", "App feed", feed.length],
   ];
 
-  /** QA / chief-editor controls that replace the writer's Edit-View-Delete row. */
+  /**
+   * QA / chief-editor controls. Edit leads, because anyone can now correct
+   * anything — the decision buttons follow it rather than replacing it.
+   */
   const reviewActions = (c: ContentItem) => (
     <>
+      <Link
+        href={`/content/${kind}/editor?id=${c.id}`}
+        title={c.status === "published" ? "Edit the live story" : "Edit"}
+        className="btn-ghost flex h-[26px] w-full items-center justify-center gap-1 py-1.5 text-[11px]"
+      >
+        <Edit3 size={11} /> Edit
+      </Link>
       {c.status === "in_review" ? (
         <>
           <button
