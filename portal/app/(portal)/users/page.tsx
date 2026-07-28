@@ -60,6 +60,27 @@ export default function UsersPage() {
     { created: 0, live: 0, waiting: 0, reviewed: 0 }
   );
 
+  // Shared scales, so a bar of a given height means the same number on every
+  // card. Computed per card, the tallest bar would always be full height and
+  // the grid would say nothing about who did more.
+  const formatMax = Math.max(
+    1,
+    ...performance.flatMap((p) => [
+      p.createdArticles,
+      p.createdPix,
+      p.createdQix,
+      p.createdTrax,
+    ])
+  );
+  const reviewMax = Math.max(
+    1,
+    ...performance.flatMap((p) => [
+      p.reviewed,
+      p.publishedByThem,
+      p.articlesApproved,
+    ])
+  );
+
   const toggleActive = async (id: string) => {
     const u = users.find((x) => x.id === id);
     if (!u || u.id === user.id) return;
@@ -171,6 +192,9 @@ export default function UsersPage() {
       </div>
 
       {tab === "performance" ? (
+        // items-stretch (the grid default) plus h-full on the card means every
+        // card in a row matches the tallest — the sections inside already
+        // render at fixed heights, so in practice they all match.
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {performance.map((p, i) => (
             <motion.div
@@ -178,8 +202,13 @@ export default function UsersPage() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i * 0.05, 0.3) }}
+              className="h-full"
             >
-              <PerformanceCard p={p} />
+              <PerformanceCard
+                p={p}
+                formatMax={formatMax}
+                reviewMax={reviewMax}
+              />
             </motion.div>
           ))}
         </div>
