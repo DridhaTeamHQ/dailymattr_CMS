@@ -164,26 +164,27 @@ export default function DashboardPage() {
             {data.audit.map((a) => (
               <div
                 key={a.id}
-                className="flex items-start gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-canvas"
+                className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-canvas"
               >
                 <Avatar
                   name={a.actorName}
                   hue={220 + ((a.actorName.length * 37) % 140)}
                   size={24}
                 />
-                <div className="min-w-0 flex-1">
-                  {/* Clamped to two lines. An unclamped headline wrapped to
-                      three or four and cost the space of a whole extra entry,
-                      so one verbose title crowded out the rest of the feed. */}
-                  <p className="line-clamp-2 text-[12px] leading-[1.3]">
-                    <span className="font-bold">{a.actorName}</span>{" "}
-                    <span className="text-muted">{a.action}</span>{" "}
-                    <span className="font-semibold">{a.entityTitle}</span>
-                  </p>
-                  <p className="text-[10px] text-faint">
-                    {a.entity} · {timeAgo(a.createdAt)}
-                  </p>
-                </div>
+                {/* One line per entry. Wrapping was the whole problem: a long
+                    headline took three or four lines and cost the space of an
+                    entire extra entry. Truncating costs the tail of a title;
+                    wrapping cost whole entries, which is the worse trade for a
+                    feed whose job is to show what is going on. Full text is a
+                    click away under "View all". */}
+                <p className="min-w-0 flex-1 truncate text-[12px]">
+                  <span className="font-bold">{a.actorName}</span>{" "}
+                  <span className="text-muted">{a.action}</span>{" "}
+                  <span className="font-semibold">{a.entityTitle}</span>
+                </p>
+                <span className="shrink-0 text-[10px] whitespace-nowrap text-faint">
+                  {timeAgo(a.createdAt)}
+                </span>
               </div>
             ))}
           </div>
