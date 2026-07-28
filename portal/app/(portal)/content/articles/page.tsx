@@ -235,7 +235,10 @@ export default function ArticlesPage() {
                       className="relative block h-64 w-full overflow-hidden text-left"
                       title="Preview in app"
                     >
-                      <NewsVisual src={n.imageUrl} imageHeight="56%" />
+                      <NewsVisual
+                        src={sel?.imageOverride ?? n.imageUrl}
+                        imageHeight="56%"
+                      />
 
                       {/* chips */}
                       <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3">
@@ -415,7 +418,7 @@ export default function ArticlesPage() {
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={art.imageUrl}
+                          src={sel.imageOverride ?? art.imageUrl}
                           alt=""
                           className="h-16 w-24 shrink-0 rounded-xl object-cover"
                         />
@@ -534,7 +537,8 @@ export default function ArticlesPage() {
       <ArticlePreview
         article={previewArticle}
         selection={previewArticle ? selOf(previewArticle.id) : undefined}
-        canEdit={approver}
+        canEdit={can.editArticleCopy(user.role)}
+        canApprove={approver}
         onClose={() => setPreviewId(null)}
         onSave={(patch) => previewArticle && saveOverrides(previewArticle, patch)}
         onToggleFeed={() => previewArticle && toggleApproval(previewArticle)}

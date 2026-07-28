@@ -175,4 +175,12 @@ export const can = {
    */
   editInReview: (r: Role) =>
     r === "qa" || r === "chief_editor" || r === "super_admin",
+  /**
+   * Rewrite the copy and photograph a NewsStudio article carries into the app.
+   * Writers do the wordsmithing, QA and editors sign it off — everyone but a
+   * reader, in practice. The pipeline database is never touched; the changes
+   * are stored as overrides on article_selections.
+   */
+  editArticleCopy: (r: Role) =>
+    r === "writer" || r === "qa" || r === "chief_editor" || r === "super_admin",
 };

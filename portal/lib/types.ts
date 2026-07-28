@@ -87,6 +87,7 @@ export interface ArticleSelection {
   /** Editorial overrides live here — DB A (NewsStudio) is never written to. */
   titleOverride?: string | null;
   summaryOverride?: string | null;
+  imageOverride?: string | null;
 }
 
 export interface AuditEntry {

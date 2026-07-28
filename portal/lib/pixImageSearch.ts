@@ -174,7 +174,11 @@ function makeResult(
   return {
     id: idx,
     alt: alt || `${source} image`,
-    preview: proxy(upgraded),
+    // The picker shows twelve of these at once, so the preview deliberately
+    // uses the smaller original rather than the upgraded variant. Proxying a
+    // dozen full-resolution photographs left the grid blank for a minute —
+    // the upgrade is only worth paying for on the image actually chosen.
+    preview: proxy(url),
     image: upgraded,
     imageProxy: proxy(upgraded),
     source,

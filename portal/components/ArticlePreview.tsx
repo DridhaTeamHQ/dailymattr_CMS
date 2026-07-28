@@ -62,6 +62,7 @@ export default function ArticlePreview({
   article,
   selection,
   canEdit,
+  canApprove,
   onClose,
   onSave,
   onToggleFeed,
@@ -69,29 +70,38 @@ export default function ArticlePreview({
 }: {
   article: NewsStudioArticle | null;
   selection: ArticleSelection | undefined;
+  /** Rewrite the copy and photograph — writers, QA and editors. */
   canEdit: boolean;
+  /** Approve into the feed and feature — reviewers only. */
+  canApprove: boolean;
   onClose: () => void;
   onSave: (patch: {
     titleOverride: string | null;
     summaryOverride: string | null;
+    imageOverride: string | null;
   }) => void;
   onToggleFeed: () => void;
   onToggleFeature: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [image, setImage] = useState("");
   const [savedAt, setSavedAt] = useState(0);
 
   useEffect(() => {
     if (!article) return;
     setTitle(selection?.titleOverride ?? article.title);
     setSummary(selection?.summaryOverride ?? article.summary);
+    setImage(selection?.imageOverride ?? article.imageUrl);
   }, [article, selection]);
 
   if (!article) return null;
 
   const words = summary.trim() ? summary.trim().split(/\s+/).length : 0;
-  const edited = title !== article.title || summary !== article.summary;
+  const edited =
+    title !== article.title ||
+    summary !== article.summary ||
+    image !== article.imageUrl;
   const inFeed = !!selection;
   const hue = sourceHue(article.source);
   const initials = article.source
@@ -105,6 +115,7 @@ export default function ArticlePreview({
     onSave({
       titleOverride: title === article.title ? null : title,
       summaryOverride: summary === article.summary ? null : summary,
+      imageOverride: image === article.imageUrl ? null : image || null,
     });
     setSavedAt(Date.now());
     setTimeout(() => setSavedAt(0), 1600);
@@ -122,7 +133,7 @@ export default function ArticlePreview({
             className="w-[300px] rounded-[2.4rem] bg-black p-[7px] shadow-(--shadow-pop)"
           >
             <div className="relative h-[610px] overflow-hidden rounded-[2rem] bg-black">
-              <NewsVisual src={article.imageUrl} imageHeight="52%" />
+              <NewsVisual src={image || article.imageUrl} imageHeight="52%" />
 
               <StatusBar />
 
@@ -236,46 +247,69 @@ export default function ArticlePreview({
                 onChange={(e) => setSummary(e.target.value)}
               />
 
-              <p className="mt-2 text-[11px] leading-relaxed text-faint">
+              <div className="mt-4 mb-2 flex items-center justify-between">
+                <span className="label">Photograph</span>
+                {image !== article.imageUrl && (
+                  <button
+                    onClick={() => setImage(article.imageUrl)}
+                    className="text-[11px] font-bold text-accent hover:underline"
+                  >
+                    use original
+                  </button>
+                )}
+              </div>
+              <input
+                className="field text-[13px]"
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="https://… image URL"
+              />
+
+              <p className="mt-3 text-[11px] leading-relaxed text-faint">
                 Edits are saved as CMS overrides — the NewsStudio pipeline
                 database is never modified.
               </p>
 
               <div className="mt-5 flex flex-wrap items-center gap-2">
-                <button
-                  onClick={onToggleFeed}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs ${
-                    inFeed ? "btn-ghost hover:!text-rose" : "btn-accent"
-                  }`}
-                >
-                  {inFeed ? (
-                    "Remove from feed"
-                  ) : (
-                    <>
-                      <Check size={13} strokeWidth={3} /> Approve for feed
-                    </>
-                  )}
-                </button>
-                {inFeed && (
-                  <button
-                    onClick={onToggleFeature}
-                    className={`btn-ghost flex items-center gap-1.5 px-4 py-2.5 text-xs ${
-                      selection?.isFeatured ? "!border-violet !text-violet" : ""
-                    }`}
-                  >
-                    {selection?.isFeatured ? (
-                      <Sparkles size={13} />
-                    ) : (
-                      <Star size={13} />
+                {canApprove && (
+                  <>
+                    <button
+                      onClick={onToggleFeed}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-xs ${
+                        inFeed ? "btn-ghost hover:!text-rose" : "btn-accent"
+                      }`}
+                    >
+                      {inFeed ? (
+                        "Remove from feed"
+                      ) : (
+                        <>
+                          <Check size={13} strokeWidth={3} /> Approve for feed
+                        </>
+                      )}
+                    </button>
+                    {inFeed && (
+                      <button
+                        onClick={onToggleFeature}
+                        className={`btn-ghost flex items-center gap-1.5 px-4 py-2.5 text-xs ${
+                          selection?.isFeatured ? "!border-violet !text-violet" : ""
+                        }`}
+                      >
+                        {selection?.isFeatured ? (
+                          <Sparkles size={13} />
+                        ) : (
+                          <Star size={13} />
+                        )}
+                        {selection?.isFeatured ? "Featured" : "Feature"}
+                      </button>
                     )}
-                    {selection?.isFeatured ? "Featured" : "Feature"}
-                  </button>
+                  </>
                 )}
                 {edited && (
                   <button
                     onClick={() => {
                       setTitle(article.title);
                       setSummary(article.summary);
+                      setImage(article.imageUrl);
                     }}
                     title="Revert to the original NewsStudio copy"
                     className="btn-ghost flex h-9 w-9 items-center justify-center !p-0"
@@ -285,21 +319,31 @@ export default function ArticlePreview({
                 )}
                 <button
                   onClick={save}
-                  disabled={!inFeed}
-                  title={inFeed ? "" : "Approve the story first"}
+                  disabled={!inFeed || !edited}
+                  title={
+                    inFeed
+                      ? edited
+                        ? ""
+                        : "Nothing changed yet"
+                      : "A story has to be in the feed before its copy can be overridden"
+                  }
                   className="btn-primary ml-auto px-5 py-2.5 text-xs disabled:opacity-40"
                 >
                   {savedAt ? "Saved ✓" : "Save overrides"}
                 </button>
               </div>
+              {!inFeed && (
+                <p className="mt-2 text-[11px] text-faint">
+                  {canApprove
+                    ? "Approve the story first — overrides attach to its place in the feed."
+                    : "QA has to approve this story before your edits can be saved."}
+                </p>
+              )}
             </>
           ) : (
             <>
               <h3 className="text-lg leading-snug font-bold">{title}</h3>
               <p className="mt-3 text-sm leading-relaxed text-muted">{summary}</p>
-              <p className="mt-5 text-[11px] text-faint">
-                QA approves and edits what appears in the app feed.
-              </p>
             </>
           )}
         </div>

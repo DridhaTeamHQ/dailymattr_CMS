@@ -258,10 +258,17 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     }
   };
 
+  // A writer keeps control of their own work up to the moment it is approved,
+  // so a typo spotted after submitting doesn't need a decline-and-resubmit
+  // round trip. QA and editors can edit anything. This mirrors the RLS policy
+  // exactly — the database enforces the same rule.
+  const ownWorkStillOpen =
+    item.createdBy === user.id &&
+    (item.status === "draft" ||
+      item.status === "rejected" ||
+      item.status === "in_review");
   const editable =
-    item.status === "draft" ||
-    item.status === "rejected" ||
-    can.editAny(user.role);
+    !item.id || ownWorkStillOpen || can.editInReview(user.role);
 
   return (
     <div
