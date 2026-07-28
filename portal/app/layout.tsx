@@ -60,8 +60,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // The bootstrap script below writes `data-theme` and the `dark` class onto
+    // this element before React hydrates, so the client copy deliberately
+    // differs from the server's. That is the only difference, and it is the
+    // price of not flashing a white page on a dark-mode reload — so the warning
+    // is suppressed here and nowhere else.
     <html
       lang="en"
+      suppressHydrationWarning
       className={cn(
         "h-full",
         "antialiased",
