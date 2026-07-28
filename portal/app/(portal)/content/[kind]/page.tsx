@@ -268,7 +268,7 @@ export default function KindListPage() {
       </SectionHeader>
 
       {cardGrid && items.length > 0 && (
-        <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-(--shadow-soft)">
+        <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
           {GRID_TABS.map(([t, label, count]) => (
             <button
               key={t}
@@ -283,7 +283,7 @@ export default function KindListPage() {
               {tab === t && (
                 <motion.span
                   layoutId="pix-tab-active"
-                  className="absolute inset-0 rounded-full bg-ink"
+                  className="absolute inset-0 rounded-full bg-shell"
                   transition={{ type: "spring", stiffness: 400, damping: 34 }}
                 />
               )}
@@ -399,7 +399,7 @@ export default function KindListPage() {
                       <StatusPill status={c.status} />
                     </div>
                     {c.durationSec && (
-                      <span className="absolute right-3 bottom-3 rounded-full bg-ink/70 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur">
+                      <span className="absolute right-3 bottom-3 rounded-full bg-shell/70 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur">
                         {fmtDur(c.durationSec)}
                       </span>
                     )}
@@ -439,20 +439,20 @@ export default function KindListPage() {
         {activeVideo && (
           <div
             onClick={() => setActiveVideo(null)}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/80 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-shell/80 backdrop-blur-md"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative flex flex-col md:flex-row w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-pop max-h-[90vh]"
+              className="relative flex flex-col md:flex-row w-full max-w-3xl overflow-hidden rounded-3xl bg-card shadow-pop max-h-[90vh]"
             >
               {/* Close Button */}
               <button
                 type="button"
                 onClick={() => setActiveVideo(null)}
-                className="absolute top-4 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-ink/70 text-white backdrop-blur hover:bg-rose transition-colors"
+                className="absolute top-4 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-shell/70 text-white backdrop-blur hover:bg-rose transition-colors"
               >
                 <X size={18} />
               </button>
@@ -491,7 +491,7 @@ export default function KindListPage() {
               </div>
 
               {/* Video Info Details Column */}
-              <div className="flex flex-1 flex-col justify-between p-6 md:p-8 bg-white overflow-y-auto">
+              <div className="flex flex-1 flex-col justify-between p-6 md:p-8 bg-card overflow-y-auto">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <StatusPill status={activeVideo.status} />

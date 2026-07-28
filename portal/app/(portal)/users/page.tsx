@@ -3,34 +3,62 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { UserPlus } from "lucide-react";
+import { BarChart3, Settings2, UserPlus } from "lucide-react";
+import PerformanceCard from "@/components/PerformanceCard";
 import { Avatar, Modal, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { inviteUser, listUsers, logAudit, updateUser } from "@/lib/db";
+import {
+  inviteUser,
+  listPerformance,
+  listUsers,
+  logAudit,
+  updateUser,
+} from "@/lib/db";
 import { useQuery } from "@/lib/useQuery";
 import { ROLE_META, type Role } from "@/lib/types";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
+
+type Tab = "performance" | "access";
 
 export default function UsersPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<Tab>("performance");
   const [form, setForm] = useState({ name: "", email: "", role: "writer" as Role });
 
   useEffect(() => {
     if (user && !can.manageUsers(user.role)) router.replace("/dashboard");
   }, [user, router]);
 
-  const { data: users, error, refetch } = useQuery(() => listUsers());
+  const { data, error, refetch } = useQuery(async () => {
+    const [users, performance] = await Promise.all([
+      listUsers(),
+      listPerformance(),
+    ]);
+    return { users, performance };
+  });
   if (error)
     return (
       <div className="card p-8 text-sm text-rose">
         Couldn&apos;t load the team: {error}
       </div>
     );
-  if (!user || !users || !can.manageUsers(user.role)) return null;
+  if (!user || !data || !can.manageUsers(user.role)) return null;
+  const { users, performance } = data;
+
+  // Newsroom totals, so the page opens with the shape of the whole team.
+  const totals = performance.reduce(
+    (a, p) => ({
+      created: a.created + p.createdTotal,
+      live: a.live + p.live,
+      waiting: a.waiting + p.awaitingReview,
+      reviewed: a.reviewed + p.reviewed,
+    }),
+    { created: 0, live: 0, waiting: 0, reviewed: 0 }
+  );
 
   const toggleActive = async (id: string) => {
     const u = users.find((x) => x.id === id);
@@ -77,15 +105,85 @@ export default function UsersPage() {
 
   return (
     <div>
-      <SectionHeader title="Team" sub="Roles mirror the publishing workflow.">
+      <SectionHeader
+        title="Team"
+        sub="Who is making what, and how much of it reaches readers."
+      >
         <button
           onClick={() => setAdding(true)}
           className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm"
         >
-          <UserPlus size={15} /> Invite member
+          <UserPlus size={15} /> Add member
         </button>
       </SectionHeader>
 
+      {/* newsroom totals */}
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "Created", value: totals.created, tone: "text-ink" },
+          { label: "Live in app", value: totals.live, tone: "text-mint" },
+          { label: "Awaiting QA", value: totals.waiting, tone: "text-amber" },
+          { label: "Reviewed", value: totals.reviewed, tone: "text-accent" },
+        ].map((s, i) => (
+          <motion.div
+            key={s.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05 }}
+            className="card px-5 py-4"
+          >
+            <div className={`text-2xl font-extrabold tabular-nums ${s.tone}`}>
+              {s.value}
+            </div>
+            <div className="mt-0.5 text-[11px] font-semibold text-muted">
+              {s.label}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* tabs */}
+      <div className="mb-5 flex w-fit items-center gap-1 rounded-full bg-card p-1 shadow-(--shadow-soft)">
+        {(
+          [
+            ["performance", "Performance", BarChart3],
+            ["access", "Roles & access", Settings2],
+          ] as [Tab, string, typeof BarChart3][]
+        ).map(([t, label, Icon]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`relative flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors ${
+              tab === t ? "text-white" : "text-muted hover:text-ink"
+            }`}
+          >
+            {tab === t && (
+              <motion.span
+                layoutId="team-tab"
+                className="absolute inset-0 rounded-full bg-shell"
+                transition={{ type: "spring", stiffness: 400, damping: 34 }}
+              />
+            )}
+            <Icon size={13} className="relative z-10" />
+            <span className="relative z-10">{label}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "performance" ? (
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {performance.map((p, i) => (
+            <motion.div
+              key={p.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.05, 0.3) }}
+            >
+              <PerformanceCard p={p} />
+            </motion.div>
+          ))}
+        </div>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2">
         {users.map((u, i) => (
           <motion.div
@@ -132,8 +230,9 @@ export default function UsersPage() {
           </motion.div>
         ))}
       </div>
+      )}
 
-      <Modal open={adding} onClose={() => setAdding(false)} title="Invite a member">
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add a member">
         <div className="space-y-4">
           <div>
             <div className="label mb-2">Full name</div>

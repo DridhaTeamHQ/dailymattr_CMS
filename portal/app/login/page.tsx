@@ -58,7 +58,7 @@ export default function LoginPage() {
           className="hidden flex-col justify-center md:flex"
         >
           <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-xl font-extrabold text-white">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-shell text-xl font-extrabold text-white">
               M
             </div>
             <div>
@@ -87,7 +87,7 @@ export default function LoginPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 + i * 0.09 }}
-                className="pill bg-white text-ink shadow-(--shadow-soft)"
+                className="pill bg-card text-ink shadow-(--shadow-soft)"
               >
                 {t}
               </motion.span>

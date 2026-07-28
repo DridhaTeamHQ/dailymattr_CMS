@@ -35,6 +35,7 @@ function StatusBar() {
         <Wifi size={11} />
         <span className="flex items-end gap-[1px]">
           {[3, 5, 7, 9].map((h) => (
+            /* Inside the phone mockup, which is dark in both themes. */
             <span
               key={h}
               className="w-[2px] rounded-sm bg-white"

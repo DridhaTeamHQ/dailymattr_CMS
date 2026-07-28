@@ -100,7 +100,7 @@ export default function FormatChart({ data }: { data: FormatDatum[] }) {
 
               {/* hover / focus detail */}
               {active && (
-                <span className="pointer-events-none absolute -top-1 left-1/2 z-20 -translate-x-1/2 -translate-y-full rounded-xl bg-ink px-3 py-2 text-left whitespace-nowrap shadow-(--shadow-lift)">
+                <span className="pointer-events-none absolute -top-1 left-1/2 z-20 -translate-x-1/2 -translate-y-full rounded-xl bg-shell px-3 py-2 text-left whitespace-nowrap shadow-(--shadow-lift)">
                   <span className="block text-[11px] font-bold text-white">
                     {KIND_META[d.kind].label}
                   </span>

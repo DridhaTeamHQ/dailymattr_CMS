@@ -91,7 +91,7 @@ export default function SourceImport({
             className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint"
           />
           <input
-            className="field !bg-white pl-10"
+            className="field !bg-card pl-10"
             value={url}
             disabled={disabled || busy}
             onChange={(e) => setUrl(e.target.value)}

@@ -213,7 +213,7 @@ function PreviewBody({
                   onClick={() => setPlacement(p)}
                   className={`flex-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition-colors ${
                     placement === p
-                      ? "bg-ink text-white"
+                      ? "bg-shell text-white"
                       : "text-muted hover:text-ink"
                   }`}
                 >

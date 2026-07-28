@@ -9,6 +9,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { THEME_BOOTSTRAP, ThemeProvider } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -73,8 +74,15 @@ export default function RootLayout({
         geist.variable
       )}
     >
+      <head>
+        {/* Sets the theme before first paint, so a dark-mode reload never
+            flashes a white page. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+      </head>
       <body className="min-h-full font-sans">
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

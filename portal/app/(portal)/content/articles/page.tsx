@@ -156,7 +156,7 @@ export default function ArticlesPage() {
       </SectionHeader>
 
       {/* tabs */}
-      <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-(--shadow-soft)">
+      <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
         {TABS.map(([t, label, count]) => (
           <button
             key={t}
@@ -171,7 +171,7 @@ export default function ArticlesPage() {
             {tab === t && (
               <motion.span
                 layoutId="tab-active"
-                className="absolute inset-0 rounded-full bg-ink"
+                className="absolute inset-0 rounded-full bg-shell"
                 transition={{ type: "spring", stiffness: 400, damping: 34 }}
               />
             )}
@@ -197,7 +197,7 @@ export default function ArticlesPage() {
               className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint"
             />
             <input
-              className="field !rounded-full !bg-white pl-10 shadow-(--shadow-soft)"
+              className="field !rounded-full !bg-card pl-10 shadow-(--shadow-soft)"
               placeholder="Search title, category or source…"
               value={query}
               onChange={(e) => {

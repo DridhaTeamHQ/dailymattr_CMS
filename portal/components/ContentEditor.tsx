@@ -315,7 +315,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
       {kind === "qix" ? (
         /* ── UNIFIED SINGLE CONTAINER FOR QIX (LEFT: VIDEO, RIGHT: FIELDS) ── */
-        <div className="card space-y-6 p-7 bg-white">
+        <div className="card space-y-6 p-7 bg-card">
           <div className="grid gap-7 lg:grid-cols-[320px_1fr] items-start">
             {/* LEFT COLUMN: Shorts Video Upload & 9:16 Preview */}
             <div className="space-y-4 rounded-2xl border border-line bg-canvas p-4">
@@ -340,7 +340,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               <div className="pt-1">
                 <div className="label mb-1">Video Direct URL</div>
                 <input
-                  className="field text-xs !bg-white"
+                  className="field text-xs !bg-card"
                   value={item.mediaUrl ?? ""}
                   disabled={!editable}
                   onChange={(e) => {
@@ -369,7 +369,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
                 <div className="flex gap-2">
                   <input
-                    className="field text-xs !bg-white flex-1"
+                    className="field text-xs !bg-card flex-1"
                     value={ytUrl}
                     disabled={!editable || scraping}
                     onChange={(e) => setYtUrl(e.target.value)}
@@ -752,7 +752,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                     onClick={() => setPlacement(p)}
                     className={`flex-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition-colors ${
                       placement === p
-                        ? "bg-ink text-white"
+                        ? "bg-shell text-white"
                         : "text-muted hover:text-ink"
                     }`}
                   >
@@ -800,7 +800,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           animate={{ opacity: 1, y: 0 }}
           // A compact pill hugged to the right, rather than a full-width bar —
           // it only holds two buttons and a status line.
-          className="sticky bottom-4 z-30 mt-5 ml-auto flex w-fit max-w-full items-center gap-2 rounded-full bg-ink p-1.5 pl-4 shadow-(--shadow-pop)"
+          className="sticky bottom-4 z-30 mt-5 ml-auto flex w-fit max-w-full items-center gap-2 rounded-full bg-shell p-1.5 pl-4 shadow-(--shadow-pop)"
         >
           {/* There is no autosave — Draft and Submit are the only writes — so
               this says what happened rather than promising anything. Errors

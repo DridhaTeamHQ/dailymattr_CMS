@@ -93,7 +93,7 @@ export default function SettingsPage() {
               transition={{ delay: i * 0.03 }}
               className={`group flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-semibold transition-all ${
                 c.isActive
-                  ? "border-line bg-white shadow-(--shadow-soft)"
+                  ? "border-line bg-card shadow-(--shadow-soft)"
                   : "border-dashed border-line text-faint"
               }`}
             >

@@ -50,7 +50,7 @@ export function QixFrame({
         }
       }}
       aria-label={onClick ? `Play ${item.title}` : undefined}
-      className={`group relative aspect-[9/16] w-full overflow-hidden rounded-[26px] bg-ink shadow-(--shadow-soft) ${
+      className={`group relative aspect-[9/16] w-full overflow-hidden rounded-[26px] bg-shell shadow-(--shadow-soft) ${
         onClick
           ? "cursor-pointer transition-transform duration-200 hover:-translate-y-1 hover:shadow-(--shadow-lift)"
           : ""

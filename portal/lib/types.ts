@@ -90,6 +90,31 @@ export interface ArticleSelection {
   imageOverride?: string | null;
 }
 
+/** One row of the user_performance view — aggregated in Postgres. */
+export interface UserPerformance {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  isActive: boolean;
+  avatarHue: number;
+  createdTotal: number;
+  createdArticles: number;
+  createdPix: number;
+  createdQix: number;
+  createdTrax: number;
+  inDraft: number;
+  awaitingReview: number;
+  sentBack: number;
+  clearedReview: number;
+  live: number;
+  /** Work of other people's they approved or declined. */
+  reviewed: number;
+  publishedByThem: number;
+  articlesApproved: number;
+  lastTouched: string | null;
+}
+
 export interface AuditEntry {
   id: string;
   actorId: string;

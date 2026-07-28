@@ -104,7 +104,7 @@ export function Modal({
           exit={{ opacity: 0 }}
         >
           <div
-            className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-shell/40 backdrop-blur-sm"
             onClick={onClose}
           />
           <motion.div

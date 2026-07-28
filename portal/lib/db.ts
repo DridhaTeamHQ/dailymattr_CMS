@@ -20,6 +20,7 @@ import type {
   ContentKind,
   ContentStatus,
   NewsStudioArticle,
+  UserPerformance,
 } from "./types";
 
 // ── row mappers ─────────────────────────────────────────────────────
@@ -168,6 +169,37 @@ export async function inviteUser(u: Omit<CmsUser, "id">) {
     .single();
   fail("inviteUser", error);
   return toUser(data as Row);
+}
+
+/** Per-person performance, aggregated by the user_performance view. */
+export async function listPerformance(): Promise<UserPerformance[]> {
+  const { data, error } = await supabase
+    .from("user_performance")
+    .select("*")
+    .order("created_total", { ascending: false });
+  fail("listPerformance", error);
+  return (data ?? []).map((r: Row) => ({
+    id: r.id as string,
+    fullName: r.full_name as string,
+    email: r.email as string,
+    role: r.role as CmsUser["role"],
+    isActive: r.is_active as boolean,
+    avatarHue: (r.avatar_hue as number) ?? 220,
+    createdTotal: Number(r.created_total ?? 0),
+    createdArticles: Number(r.created_articles ?? 0),
+    createdPix: Number(r.created_pix ?? 0),
+    createdQix: Number(r.created_qix ?? 0),
+    createdTrax: Number(r.created_trax ?? 0),
+    inDraft: Number(r.in_draft ?? 0),
+    awaitingReview: Number(r.awaiting_review ?? 0),
+    sentBack: Number(r.sent_back ?? 0),
+    clearedReview: Number(r.cleared_review ?? 0),
+    live: Number(r.live ?? 0),
+    reviewed: Number(r.reviewed ?? 0),
+    publishedByThem: Number(r.published_by_them ?? 0),
+    articlesApproved: Number(r.articles_approved ?? 0),
+    lastTouched: (r.last_touched as string | null) ?? null,
+  }));
 }
 
 // ── categories ──────────────────────────────────────────────────────

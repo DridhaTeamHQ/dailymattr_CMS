@@ -27,6 +27,14 @@ Run in this order against a fresh project (they are already applied to
 | 8 | `seed_auth_users_for_demo` | Real `auth.users` rows for the demo logins |
 | 9 | `move_helpers_to_private_schema` | Moves policy helpers into `private` so PostgREST can't expose them |
 
+## Views
+
+`user_performance` — one row per person for the admin's Team page: what they
+created by format, where it got to (draft / awaiting QA / sent back / live),
+and what they moved through as a reviewer. Aggregated in Postgres rather than
+by pulling every content row into the browser, since the content table only
+grows. Declared `security_invoker`, so it is read through the caller's RLS.
+
 ## Tables
 
 `content_items` is one table for all four formats. Format-specific payload lives

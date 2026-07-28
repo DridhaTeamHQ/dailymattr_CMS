@@ -624,7 +624,7 @@ export default function PixComposer({
               onClick={() => setPreviewMode(m)}
               className={`flex-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition-colors ${
                 previewMode === m
-                  ? "bg-ink text-white"
+                  ? "bg-shell text-white"
                   : "text-muted hover:text-ink"
               }`}
             >
@@ -699,7 +699,7 @@ export default function PixComposer({
           </div>
           <div className="flex gap-2">
             <input
-              className="field !bg-white text-xs"
+              className="field !bg-card text-xs"
               value={articleUrl}
               disabled={disabled || scraping}
               onChange={(e) => setArticleUrl(e.target.value)}
@@ -747,7 +747,7 @@ export default function PixComposer({
 
           {/* A section or homepage yields a list — pick one and build it. */}
           {headlines !== null && headlines.length > 0 && (
-            <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto rounded-xl bg-white p-1.5">
+            <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto rounded-xl bg-card p-1.5">
               {headlines.map((h) => (
                 <li key={h.url}>
                   <button
@@ -780,7 +780,7 @@ export default function PixComposer({
                   </span>
                 </div>
                 <textarea
-                  className="field min-h-16 resize-y !bg-white text-xs"
+                  className="field min-h-16 resize-y !bg-card text-xs"
                   value={headline}
                   maxLength={PIX_TITLE_MAX}
                   disabled={disabled}
@@ -814,7 +814,7 @@ export default function PixComposer({
                         style={{ background: "var(--color-accent)" }}
                       />
                       <textarea
-                        className="field min-h-9 resize-y !bg-white text-xs"
+                        className="field min-h-9 resize-y !bg-card text-xs"
                         value={p}
                         maxLength={PIX_POINT_MAX}
                         disabled={disabled}
@@ -847,7 +847,7 @@ export default function PixComposer({
                   </button>
                 </div>
                 <textarea
-                  className="field min-h-24 resize-y !bg-white text-xs"
+                  className="field min-h-24 resize-y !bg-card text-xs"
                   value={state.detailText}
                   disabled={disabled}
                   onChange={(e) => setDraftKey("detailText", e.target.value)}
@@ -871,7 +871,7 @@ export default function PixComposer({
                 </div>
                 <div className="grid gap-1.5 sm:grid-cols-[130px_minmax(0,1fr)]">
                   <input
-                    className="field !bg-white text-xs"
+                    className="field !bg-card text-xs"
                     value={source?.title ?? ""}
                     disabled={disabled}
                     onChange={(e) =>
@@ -884,7 +884,7 @@ export default function PixComposer({
                     placeholder="Publisher"
                   />
                   <input
-                    className="field !bg-white text-xs"
+                    className="field !bg-card text-xs"
                     value={source?.url ?? ""}
                     disabled={disabled}
                     onChange={(e) =>
@@ -1053,7 +1053,7 @@ export default function PixComposer({
                 value={state.accent}
                 disabled={disabled}
                 onChange={(e) => setDraftKey("accent", e.target.value)}
-                className="h-9 w-12 cursor-pointer rounded-lg border border-line bg-white p-1"
+                className="h-9 w-12 cursor-pointer rounded-lg border border-line bg-card p-1"
               />
               <span className="text-[11px] font-bold tabular-nums text-muted uppercase">
                 {state.accent}
