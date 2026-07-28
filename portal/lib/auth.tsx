@@ -122,8 +122,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       return;
     }
-    const { data: userData } = await supabase.auth.getUser();
-    const authUser = userData?.user;
+
+    /* Trust the server, not the copy in localStorage.
+     *
+     * `getSession()` reads the stored session and does not check it, so an
+     * access token the server has stopped accepting still looks like a signed-
+     * in user. Every query then goes out with a dead Bearer token and comes
+     * back 401 — over and over, because nothing here treated that as a reason
+     * to stop. The Studio sat on a screen that looked logged in and loaded
+     * nothing, with the real answer only visible in the network tab.
+     *
+     * `getUser()` asks the server, so its error is the authoritative "this
+     * session is finished". Signing out clears the stored token and drops the
+     * editor on the login screen, which is both true and actionable. */
+    const { data: userData, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !userData?.user) {
+      await supabase.auth.signOut().catch(() => {});
+      setUser(null);
+      return;
+    }
+
+    const authUser = userData.user;
     const userEmail = authUser?.email;
 
     let profile = await loadProfile(userId, userEmail);
