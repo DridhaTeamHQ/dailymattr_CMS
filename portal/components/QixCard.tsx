@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { Clapperboard, Eye, Pencil, Play } from "lucide-react";
 import { StatusPill } from "@/components/ui";
+import { isMediaFile, youtubeId } from "@/lib/media";
 import type { ContentItem } from "@/lib/types";
 
-/** Anything we can actually play inline. */
-export const hasPlayableVideo = (url: string | null) =>
-  !!url &&
-  (url.endsWith(".mp4") ||
-    url.endsWith(".webm") ||
-    url.startsWith("data:video") ||
-    url.startsWith("/api/media/"));
+/* Anything we can actually play inline — a file for <video>, a YouTube id for
+   the embed. Delegated to lib/media so the CMS and the app cannot drift into
+   disagreeing about what "playable" means; this asked only whether the string
+   ended in .mp4, so a perfectly good YouTube link showed as "No video yet"
+   while the reader watched it happily. */
+export const hasPlayableVideo = (url: string | null) => isMediaFile(url);
 
 const fmtDur = (s: number | null) => {
   if (!s) return null;
@@ -36,6 +36,9 @@ export function QixFrame({
   onClick?: () => void;
 }) {
   const playable = hasPlayableVideo(item.mediaUrl);
+  // A Short is a page, not a file — <video> cannot open it, but the embed can,
+  // and the reader's app plays it exactly this way.
+  const ytId = playable ? null : youtubeId(item.mediaUrl);
   const duration = fmtDur(item.durationSec);
 
   return (
@@ -70,6 +73,17 @@ export function QixFrame({
             e.currentTarget.currentTime = 0;
           }}
           className="h-full w-full object-cover"
+        />
+      ) : ytId ? (
+        /* YouTube's own poster, which always exists for a public video, so the
+           tile shows the clip even when the desk never set a cover. Clicking
+           opens the editor rather than the video — the frame is a preview of
+           the card, not a player. */
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`}
+          alt=""
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
         />
       ) : item.coverUrl ? (
         // eslint-disable-next-line @next/next/no-img-element

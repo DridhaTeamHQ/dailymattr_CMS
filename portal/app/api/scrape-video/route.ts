@@ -209,6 +209,17 @@ export async function POST(req: Request) {
       `[scrape-video] ${safeName} · ${Math.round((result.sizeBytes ?? 0) / 1024)}KB · ${result.durationSec ?? "?"}s`
     );
 
+    /* Absolute, because this URL is going into a database the phone reads.
+     *
+     * It used to be saved as `/api/media/<file>`, which resolves against
+     * whoever asks for it — fine in a browser pointed at this server, and
+     * meaningless on a device, where it is not a URL at all. A Qix imported
+     * that way went live with media the reader could never fetch.
+     *
+     * MEDIA_BASE_URL is for when the CMS runs behind a domain or proxy that
+     * the request origin does not reveal; otherwise the origin is right. */
+    const base = (process.env.MEDIA_BASE_URL ?? new URL(req.url).origin).replace(/\/+$/, "");
+
     return NextResponse.json({
       success: true,
       // The editor gates its success line on this; the import either produces
@@ -216,7 +227,7 @@ export async function POST(req: Request) {
       isDownloaded: true,
       url: checked.url,
       title: result.title || null,
-      videoUrl: `/api/media/${encodeURIComponent(safeName)}`,
+      videoUrl: `${base}/api/media/${encodeURIComponent(safeName)}`,
       coverUrl: result.coverUrl || null,
       durationSec: result.durationSec ?? null,
       uploader: result.uploader || null,

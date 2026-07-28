@@ -10,6 +10,7 @@ import { PixBezel } from "@/components/PixPoster";
 import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { mediaBlocker } from "@/lib/media";
 import {
   createContent,
   getContentItem,
@@ -133,8 +134,13 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     }
   };
 
+  // Keyed on the id, not the user object. A token refresh hands back a fresh
+  // profile object with identical values; depending on the object re-ran this
+  // loader and reset the item, throwing away whatever was being edited.
+  const userId = user?.id;
+
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let alive = true;
     (async () => {
       if (editId) {
@@ -144,12 +150,12 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           return;
         }
       }
-      if (alive) setItem(emptyItem(kind, user.id));
+      if (alive) setItem(emptyItem(kind, userId));
     })();
     return () => {
       alive = false;
     };
-  }, [editId, kind, user]);
+  }, [editId, kind, userId]);
 
   // Google's video URLs are signed and expire within hours, so a saved one is
   // dead by the time anyone opens the draft again. This used to quietly swap in
@@ -695,6 +701,26 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                   onChange={(e) => set("mediaUrl", e.target.value || null)}
                   placeholder="https://cdn…/episode.mp3"
                 />
+                {/* Trax had no validation and no preview: a URL was typed into
+                    a box and believed. The one published episode points at
+                    cdn.dailymattr.example — `.example` is a reserved TLD that
+                    can never resolve — and nothing anywhere said so. Publishing
+                    is blocked on this now (lib/media), but being told at the
+                    point of typing is worth more than being told at the end. */}
+                {item.mediaUrl?.trim() ? (
+                  mediaBlocker("trax", item.mediaUrl) ? (
+                    <p className="mt-2 text-[11px] font-semibold text-rose">
+                      {mediaBlocker("trax", item.mediaUrl)}
+                    </p>
+                  ) : (
+                    <audio
+                      src={item.mediaUrl}
+                      controls
+                      preload="none"
+                      className="mt-3 w-full"
+                    />
+                  )
+                ) : null}
               </div>
               <div>
                 <div className="label mb-2">Duration (sec)</div>

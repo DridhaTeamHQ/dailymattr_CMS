@@ -91,6 +91,28 @@ async function loadProfile(
   return null;
 }
 
+/**
+ * True when two profiles carry the same values.
+ *
+ * `onAuthStateChange` fires on every token refresh, and each fire re-reads the
+ * profile and builds a fresh object. Handing that new reference to consumers
+ * re-runs any effect that depends on `user` — which silently wiped the content
+ * editor mid-edit, because its loader resets the item on every run. Comparing
+ * by value lets the reference stay stable when nothing has really changed.
+ */
+function sameProfile(a: CmsUser, b: CmsUser): boolean {
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.fullName === b.fullName &&
+    a.role === b.role &&
+    a.isActive === b.isActive &&
+    a.avatarHue === b.avatarHue &&
+    a.languages.join() === b.languages.join() &&
+    a.states.join() === b.states.join()
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CmsUser | null>(null);
   const [ready, setReady] = useState(false);
@@ -170,7 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    setUser(profile);
+    setUser((prev) => (prev && sameProfile(prev, profile) ? prev : profile));
   }, []);
 
   useEffect(() => {
@@ -224,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           error: `This account signs in as ${profile.role.replace("_", " ")} — pick that role.`,
         };
       }
-      setUser(profile);
+      setUser((prev) => (prev && sameProfile(prev, profile) ? prev : profile));
       return { ok: true as const };
     },
     []

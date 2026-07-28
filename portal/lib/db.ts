@@ -10,6 +10,7 @@
  * mappers below are the only place that translation lives.
  */
 
+import { mediaBlocker } from "./media";
 import { newsstudio, supabase } from "./supabase";
 import type {
   ArticleSelection,
@@ -304,6 +305,22 @@ export async function setContentStatus(
   actor: CmsUser,
   note?: string
 ) {
+  /* A Qix or Trax with nothing to play must not go live.
+   *
+   * Five published Qix currently have `media_url` null and three more point at
+   * a page rather than a file. Nothing stopped any of them: publishing only
+   * ever set a status. The reader gets a card that loads, renders its headline,
+   * and plays nothing — which looks like the app is broken rather than like the
+   * item is unfinished.
+   *
+   * Checked here rather than in the review screen because this function is the
+   * one path every publish goes through, wherever the button lives. */
+  if (status === "published") {
+    const current = await getContentItem(id);
+    const blocker = current && mediaBlocker(current.kind, current.mediaUrl);
+    if (blocker) throw new Error(blocker);
+  }
+
   const patch: Partial<ContentItem> = { status };
   if (status === "rejected") {
     patch.reviewNote = note ?? null;
