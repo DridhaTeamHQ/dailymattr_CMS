@@ -15,8 +15,10 @@ import {
 } from "lucide-react";
 import ArticlePreview from "@/components/ArticlePreview";
 import NewsVisual from "@/components/NewsVisual";
+import { Pager } from "@/components/Pager";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import {
   approveArticle,
   listContentByKind,
@@ -38,6 +40,8 @@ export default function ArticlesPage() {
   const [tab, setTab] = useState<Tab>("newsstudio");
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // One page counter — the tabs reset it, so each list starts at the top.
+  const [page, setPage] = useState(1);
 
   const { data, error, refetch } = useQuery(async () => {
     const [newsstudio, selections, written, users] = await Promise.all([
@@ -109,6 +113,19 @@ export default function ArticlesPage() {
         n.source.toLowerCase().includes(q)
     ) ?? [];
 
+  const selections = data?.selections ?? [];
+  const written = data?.written ?? [];
+
+  // Approving or searching can empty the last page, so clamp before slicing.
+  const newsSize = PAGE_SIZES.newsGrid;
+  const rowSize = PAGE_SIZES.articleRows;
+  const newsPage = clampPage(page, filtered.length, newsSize);
+  const feedPage = clampPage(page, selections.length, rowSize);
+  const writtenPage = clampPage(page, written.length, rowSize);
+  const newsRows = pageSlice(filtered, page, newsSize);
+  const feedRows = pageSlice(selections, page, rowSize);
+  const writtenRows = pageSlice(written, page, rowSize);
+
   const selOf = (id: string) => data?.selections.find((s) => s.articleId === id);
   const nameOf = (id: string) =>
     data?.users.find((u) => u.id === id)?.fullName ?? "—";
@@ -139,7 +156,10 @@ export default function ArticlesPage() {
         {TABS.map(([t, label, count]) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              setPage(1);
+            }}
             className={`relative rounded-full px-4 py-2 text-[13px] font-bold whitespace-nowrap transition-colors ${
               tab === t ? "text-white" : "text-muted hover:text-ink"
             }`}
@@ -176,11 +196,17 @@ export default function ArticlesPage() {
               className="field !rounded-full !bg-white pl-10 shadow-(--shadow-soft)"
               placeholder="Search title, category or source…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
             />
             {query && (
               <button
-                onClick={() => setQuery("")}
+                onClick={() => {
+                  setQuery("");
+                  setPage(1);
+                }}
                 className="absolute top-1/2 right-3.5 -translate-y-1/2 text-faint hover:text-ink"
               >
                 <X size={14} />
@@ -213,7 +239,7 @@ export default function ArticlesPage() {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filtered.map((n, i) => {
+              {newsRows.map((n, i) => {
                 const sel = selOf(n.id);
                 const approved = !!sel;
                 return (
@@ -343,6 +369,14 @@ export default function ArticlesPage() {
               })}
             </div>
           )}
+
+          <Pager
+            page={newsPage}
+            total={filtered.length}
+            size={newsSize}
+            onPage={setPage}
+            label="stories"
+          />
         </>
       )}
 
@@ -394,7 +428,7 @@ export default function ArticlesPage() {
           ) : (
             <div className="space-y-3">
               <AnimatePresence mode="popLayout">
-                {data.selections.map((sel) => {
+                {feedRows.map((sel) => {
                   const art = data.newsstudio.find(
                     (n) => n.id === sel.articleId
                   );
@@ -470,68 +504,88 @@ export default function ArticlesPage() {
               </AnimatePresence>
             </div>
           )}
+
+          <Pager
+            page={feedPage}
+            total={selections.length}
+            size={rowSize}
+            onPage={setPage}
+            label="in the feed"
+          />
         </>
       )}
 
       {/* ── Written in Studio ──────────────────────────────────── */}
       {tab === "cms" && (
-        <div className="space-y-3">
-          {!data ? (
-            [0, 1].map((i) => <div key={i} className="card h-24 animate-pulse" />)
-          ) : data.written.length === 0 ? (
-            <div className="card flex flex-col items-center gap-2 p-14 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
-                <Plus size={20} />
-              </span>
-              <p className="font-bold">No articles written yet</p>
-              <p className="max-w-xs text-sm text-muted">
-                Write an original 60-word story — it flows through QA before it
-                reaches the app.
-              </p>
-              <Link
-                href="/content/articles/editor"
-                className="btn-primary mt-3 px-5 py-2.5 text-xs"
-              >
-                Write the first one
-              </Link>
-            </div>
-          ) : (
-            data.written.map((c, i) => (
-              <motion.div
-                key={c.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.05, 0.2) }}
-              >
+        <>
+          <div className="space-y-3">
+            {!data ? (
+              [0, 1].map((i) => (
+                <div key={i} className="card h-24 animate-pulse" />
+              ))
+            ) : data.written.length === 0 ? (
+              <div className="card flex flex-col items-center gap-2 p-14 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
+                  <Plus size={20} />
+                </span>
+                <p className="font-bold">No articles written yet</p>
+                <p className="max-w-xs text-sm text-muted">
+                  Write an original 60-word story — it flows through QA before
+                  it reaches the app.
+                </p>
                 <Link
-                  href={`/content/articles/editor?id=${c.id}`}
-                  className="card card-hover flex items-center gap-4 p-4"
+                  href="/content/articles/editor"
+                  className="btn-primary mt-3 px-5 py-2.5 text-xs"
                 >
-                  {c.coverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.coverUrl}
-                      alt=""
-                      className="h-16 w-24 shrink-0 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <div className="h-16 w-24 shrink-0 rounded-xl bg-canvas" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-bold">{c.title}</p>
-                    <p className="mt-0.5 line-clamp-1 text-xs text-muted">
-                      {c.summary}
-                    </p>
-                    <p className="mt-1 text-[11px] text-faint">
-                      Updated {timeAgo(c.updatedAt)}
-                    </p>
-                  </div>
-                  <StatusPill status={c.status} />
+                  Write the first one
                 </Link>
-              </motion.div>
-            ))
-          )}
-        </div>
+              </div>
+            ) : (
+              writtenRows.map((c, i) => (
+                <motion.div
+                  key={c.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i * 0.05, 0.2) }}
+                >
+                  <Link
+                    href={`/content/articles/editor?id=${c.id}`}
+                    className="card card-hover flex items-center gap-4 p-4"
+                  >
+                    {c.coverUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.coverUrl}
+                        alt=""
+                        className="h-16 w-24 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="h-16 w-24 shrink-0 rounded-xl bg-canvas" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-bold">{c.title}</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs text-muted">
+                        {c.summary}
+                      </p>
+                      <p className="mt-1 text-[11px] text-faint">
+                        Updated {timeAgo(c.updatedAt)}
+                      </p>
+                    </div>
+                    <StatusPill status={c.status} />
+                  </Link>
+                </motion.div>
+              ))
+            )}
+          </div>
+
+          <Pager
+            page={writtenPage}
+            total={written.length}
+            size={rowSize}
+            onPage={setPage}
+            label="articles"
+          />
+        </>
       )}
 
       <ArticlePreview

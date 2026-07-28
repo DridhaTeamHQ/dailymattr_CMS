@@ -3,6 +3,10 @@
 export const PAGE_SIZES = {
   /** Pix grid — five across at the widest breakpoint, so pages of ten. */
   pixGrid: 10,
+  /** NewsStudio grid — four across at the widest, so pages of twelve. */
+  newsGrid: 12,
+  /** Article rows — the app feed and Studio drafts are both single columns. */
+  articleRows: 8,
   /** Review queue rows are tall; fewer per page keeps the actions in reach. */
   reviewRows: 5,
 } as const;
