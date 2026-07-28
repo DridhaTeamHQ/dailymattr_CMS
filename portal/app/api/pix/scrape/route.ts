@@ -1,26 +1,24 @@
 import { NextResponse } from "next/server";
 import { parseTargetUrl, scrapeListing } from "@/lib/pixScrape";
+import { errorResponse } from "@/lib/safeFetch";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /** Scrape a listing page into deduplicated headline links. */
 export async function POST(req: Request) {
   let url: URL;
   try {
     const body = await req.json();
-    url = parseTargetUrl(body?.url);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "A URL is required." },
-      { status: 400 }
-    );
+    // Resolves DNS and refuses internal addresses before anything is fetched.
+    url = await parseTargetUrl(body?.url);
+  } catch (e) {
+    return errorResponse(e);
   }
 
   try {
     return NextResponse.json({ items: await scrapeListing(url) });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Scrape failed.";
-    return NextResponse.json(
-      { error: message },
-      { status: /^Source returned/.test(message) ? 502 : 500 }
-    );
+  } catch (e) {
+    return errorResponse(e);
   }
 }

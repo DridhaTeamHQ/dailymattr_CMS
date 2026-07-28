@@ -1,5 +1,4 @@
-import dns from "node:dns/promises";
-import net from "node:net";
+import { errorResponse, safeFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,56 +16,6 @@ export interface ScrapeResult {
   section: string | null;
   keywords: string[];
   publishedAt: string | null;
-}
-
-// ── SSRF guards ────────────────────────────────────────────────────
-// The URL comes from a user, so the server must not be tricked into
-// fetching internal services or cloud metadata endpoints.
-function isBlockedIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    if (a === 0 || a === 127) return true; // this-host / loopback
-    if (a === 10) return true; // private
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 169 && b === 254) return true; // link-local + cloud metadata
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    if (a >= 224) return true; // multicast / reserved
-    return false;
-  }
-  const v6 = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  if (v6 === "::1" || v6 === "::") return true;
-  if (v6.startsWith("fc") || v6.startsWith("fd")) return true; // unique local
-  if (v6.startsWith("fe80")) return true; // link-local
-  if (v6.startsWith("::ffff:")) return isBlockedIp(v6.slice(7)); // v4-mapped
-  return false;
-}
-
-async function assertPublicUrl(raw: string): Promise<URL> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error("That doesn't look like a valid URL.");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new Error("Only http and https links can be imported.");
-
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal"))
-    throw new Error("That host isn't reachable from the importer.");
-
-  if (net.isIP(host)) {
-    if (isBlockedIp(host)) throw new Error("That address range isn't allowed.");
-    return url;
-  }
-  const records = await dns.lookup(host, { all: true }).catch(() => {
-    throw new Error("Couldn't resolve that domain.");
-  });
-  if (!records.length) throw new Error("Couldn't resolve that domain.");
-  if (records.some((r) => isBlockedIp(r.address)))
-    throw new Error("That address range isn't allowed.");
-  return url;
 }
 
 // ── HTML helpers ───────────────────────────────────────────────────
@@ -177,61 +126,28 @@ export async function POST(request: Request) {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
   if (!raw) return Response.json({ error: "Paste a link first." }, { status: 400 });
-  // Only add a scheme when none was given, so file:/ftp: reach the protocol check.
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) raw = `https://${raw}`;
-
-  let url: URL;
+  // safeFetch validates the URL, re-validates every redirect hop, times out and
+  // caps the body while streaming. Following redirects blindly used to defeat
+  // the whole guard: a public host could 302 to an internal address.
+  let fetched;
   try {
-    url = await assertPublicUrl(raw);
-  } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : "That link can't be imported." },
-      { status: 400 }
-    );
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        // Many publishers serve a stub to unknown agents.
-        "user-agent":
-          "Mozilla/5.0 (compatible; DailyMattrStudio/1.0; +https://dailymattr.com)",
-        accept: "text/html,application/xhtml+xml",
-        "accept-language": "en-IN,en;q=0.9",
-      },
+    fetched = await safeFetch(raw, {
+      accept: "text/html,application/xhtml+xml",
+      maxBytes: MAX_BYTES,
+      timeoutMs: FETCH_TIMEOUT_MS,
     });
   } catch (e) {
-    clearTimeout(timer);
-    const aborted = e instanceof Error && e.name === "AbortError";
-    return Response.json(
-      { error: aborted ? "The site took too long to respond." : "Couldn't reach that link." },
-      { status: 502 }
-    );
+    return errorResponse(e);
   }
-  clearTimeout(timer);
 
-  if (!res.ok)
-    return Response.json(
-      { error: `The site returned ${res.status}. It may block automated readers.` },
-      { status: 502 }
-    );
-
-  const type = res.headers.get("content-type") ?? "";
-  if (!type.includes("html"))
+  if (!fetched.contentType.includes("html"))
     return Response.json(
       { error: "That link isn't an article page." },
       { status: 415 }
     );
 
-  const buf = await res.arrayBuffer();
-  if (buf.byteLength > MAX_BYTES)
-    return Response.json({ error: "That page is too large to import." }, { status: 413 });
-  const html = new TextDecoder("utf-8").decode(buf);
+  const url = new URL(fetched.finalUrl);
+  const html = new TextDecoder("utf-8").decode(fetched.buffer);
 
   const title = first(
     meta(html, "og:title"),

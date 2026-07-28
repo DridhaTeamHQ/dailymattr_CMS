@@ -106,7 +106,14 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         if (data.title) {
           set("title", data.title);
         }
-        setScrapeMsg(data.isFallback ? "Video details imported!" : "Successfully scraped with yt-dlp!");
+        // Report what actually happened. This used to read data.isFallback,
+        // which the route never sends, so it always claimed a full success —
+        // including when no video had been fetched at all.
+        if (data.isDownloaded) setScrapeMsg("Video imported.");
+        else
+          setScrapeErr(
+            data.notice ?? "Only the title and thumbnail could be imported."
+          );
       } else {
         setScrapeErr(data.error || "Failed to scrape video URL.");
       }
@@ -135,6 +142,10 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     };
   }, [editId, kind, user]);
 
+  // Google's video URLs are signed and expire within hours, so a saved one is
+  // dead by the time anyone opens the draft again. This used to quietly swap in
+  // an unrelated stock clip; now it clears the field and says what happened, so
+  // nobody publishes footage they didn't choose.
   useEffect(() => {
     if (
       item?.mediaUrl &&
@@ -142,14 +153,9 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         item.mediaUrl.includes("gtv-videos-bucket") ||
         item.mediaUrl.includes("googlevideo.com"))
     ) {
-      setItem((prev) =>
-        prev
-          ? {
-              ...prev,
-              mediaUrl:
-                "https://assets.mixkit.co/videos/preview/mixkit-a-girl-blowing-a-bubble-gum-bubble-41537-large.mp4",
-            }
-          : prev
+      setItem((prev) => (prev ? { ...prev, mediaUrl: null } : prev));
+      setScrapeErr(
+        "The saved video link had expired and was cleared — re-import or upload the file."
       );
     }
   }, [item?.mediaUrl]);
@@ -335,9 +341,9 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 <div className="flex items-center justify-between">
                   <div className="label font-bold text-ink text-[11px] flex items-center gap-1.5">
                     <Sparkles size={13} className="text-accent" />
-                    Scrape YouTube / Instagram
+                    Import from YouTube
                   </div>
-                  <span className="text-[10px] font-mono bg-tint px-2 py-0.5 rounded-full text-accent font-semibold">yt-dlp</span>
+                  <span className="text-[10px] font-mono bg-tint px-2 py-0.5 rounded-full text-accent font-semibold">beta</span>
                 </div>
 
                 <div className="flex gap-2">
@@ -346,7 +352,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                     value={ytUrl}
                     disabled={!editable || scraping}
                     onChange={(e) => setYtUrl(e.target.value)}
-                    placeholder="Paste YouTube Shorts or Reel link…"
+                    placeholder="Paste a YouTube Shorts link…"
                   />
                   <button
                     type="button"

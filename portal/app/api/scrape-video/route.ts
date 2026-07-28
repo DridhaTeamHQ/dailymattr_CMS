@@ -98,62 +98,54 @@ export async function POST(req: Request) {
           console.warn("YouTube HTML extraction failed:", e);
         }
 
-        // Step 3: Stream download direct MP4 video file to public/uploads/
-        const fallbackUrl = "https://assets.mixkit.co/videos/preview/mixkit-a-girl-blowing-a-bubble-gum-bubble-41537-large.mp4";
-        const downloadUrl = directMp4StreamUrl || fallbackUrl;
-        
-        try {
-          const videoRes = await fetch(downloadUrl, {
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
-          });
-          if (videoRes.ok) {
-            const buf = await videoRes.arrayBuffer();
-            fs.writeFileSync(localFilePath, Buffer.from(buf));
+        // Step 3: Download the stream we actually found.
+        //
+        // There is deliberately no stock-video fallback here. This used to
+        // download an unrelated clip and report success, so an editor could
+        // publish stock footage believing they had scraped the source.
+        let downloaded = false;
+        if (directMp4StreamUrl) {
+          try {
+            const videoRes = await fetch(directMp4StreamUrl, {
+              headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+            });
+            if (videoRes.ok) {
+              const buf = await videoRes.arrayBuffer();
+              fs.writeFileSync(localFilePath, Buffer.from(buf));
+              downloaded = fs.existsSync(localFilePath);
+            }
+          } catch (e) {
+            console.warn("Video file write failed:", e);
           }
-        } catch (e) {
-          console.warn("Video file write failed:", e);
         }
 
-        const videoUrl = fs.existsSync(localFilePath)
-          ? `/api/media/${localFileName}`
-          : fallbackUrl;
-
+        // Metadata is still worth having even when the stream is locked —
+        // say so plainly rather than inventing a video.
         return NextResponse.json({
           success: true,
           url,
           title,
-          videoUrl,
+          videoUrl: downloaded ? `/api/media/${localFileName}` : null,
           coverUrl,
-          durationSec,
+          durationSec: downloaded ? durationSec : null,
           uploader: author,
-          isDownloaded: fs.existsSync(localFilePath)
+          isDownloaded: downloaded,
+          notice: downloaded
+            ? null
+            : "Couldn't extract a playable stream — title and thumbnail imported. Add the video file yourself.",
         });
       }
     } else if (isInstagram) {
-      const filename = `insta_${Date.now()}.mp4`;
-      const localFilePath = path.join(uploadsDir, filename);
-      const sampleUrl = "https://assets.mixkit.co/videos/preview/mixkit-tree-with-yellow-leaves-in-low-angle-shot-40063-large.mp4";
-      
-      try {
-        const sampleRes = await fetch(sampleUrl);
-        if (sampleRes.ok) {
-          const buf = await sampleRes.arrayBuffer();
-          fs.writeFileSync(localFilePath, Buffer.from(buf));
-        }
-      } catch (e) {}
-
-      const videoUrl = fs.existsSync(localFilePath) ? `/api/media/${filename}` : sampleUrl;
-
-      return NextResponse.json({
-        success: true,
-        url,
-        title: "Instagram Reel",
-        videoUrl,
-        coverUrl: "https://picsum.photos/seed/instareel/450/800",
-        durationSec: 30,
-        uploader: "Instagram Creator",
-        isDownloaded: fs.existsSync(localFilePath)
-      });
+      // Instagram is not scraped. It previously returned a hardcoded stock
+      // clip with success:true, which is worse than not supporting it.
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Instagram isn't supported — download the reel and upload the file, or paste a direct video URL.",
+        },
+        { status: 422 }
+      );
     }
 
     return NextResponse.json(

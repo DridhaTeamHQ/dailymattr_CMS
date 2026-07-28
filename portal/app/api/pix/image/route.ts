@@ -1,4 +1,7 @@
-import { USER_AGENT } from "@/lib/pixScrape";
+import { errorResponse, safeFetch } from "@/lib/safeFetch";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * Same-origin proxy for scraped images.
@@ -6,6 +9,10 @@ import { USER_AGENT } from "@/lib/pixScrape";
  * Without this the composer can draw a remote photograph but never export it —
  * the canvas is tainted the moment a cross-origin image is drawn, and
  * `toDataURL` throws. Serving the bytes from our own origin keeps it clean.
+ *
+ * It is also a request forwarder pointed at whatever URL the caller supplies,
+ * so it goes through the same guard as the scrapers: internal addresses are
+ * refused, redirects are re-checked at every hop, and the body is capped.
  */
 export async function GET(req: Request) {
   const target = new URL(req.url).searchParams.get("url");
@@ -13,53 +20,24 @@ export async function GET(req: Request) {
     return Response.json({ error: "Image URL is required." }, { status: 400 });
   }
 
-  let parsed: URL;
   try {
-    parsed = new URL(target);
-  } catch {
-    return Response.json({ error: "That is not a valid URL." }, { status: 400 });
-  }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    return Response.json(
-      { error: "Only http and https image URLs are supported." },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const response = await fetch(parsed, {
-      headers: { "user-agent": USER_AGENT },
+    const { buffer, contentType } = await safeFetch(target, {
+      accept: "image/*",
+      expectContentType: "image/",
+      maxBytes: 12_000_000,
+      timeoutMs: 10_000,
     });
-    if (!response.ok) {
-      return Response.json(
-        { error: `Image source returned ${response.status}.` },
-        { status: 502 }
-      );
-    }
 
-    const contentType =
-      response.headers.get("content-type") || "application/octet-stream";
-    if (!contentType.startsWith("image/")) {
-      return Response.json(
-        { error: "That URL did not return an image." },
-        { status: 415 }
-      );
-    }
-
-    return new Response(await response.arrayBuffer(), {
+    return new Response(buffer, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "no-store",
-        "Access-Control-Allow-Origin": "*",
+        // Only our own canvas reads this; there is no reason for any other
+        // origin to be able to drive it.
+        "Cache-Control": "private, max-age=300",
       },
     });
-  } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : "Image proxy failed.",
-      },
-      { status: 500 }
-    );
+  } catch (e) {
+    return errorResponse(e);
   }
 }

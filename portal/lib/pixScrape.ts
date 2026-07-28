@@ -11,6 +11,8 @@
  * The endpoint returns `imageQuery: null` and the composer copes.
  */
 
+import { assertPublicUrl, safeFetch } from "./safeFetch";
+
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
@@ -35,11 +37,17 @@ export type ScrapedArticle = {
   imageQuery: string | null;
 };
 
-/** Fetches a page with the browser UA the original uses. */
+/**
+ * Fetches a page through the SSRF guard. Every hop is re-validated and the
+ * body is capped, so a redirect to an internal address can't be followed.
+ */
 async function fetchPage(url: URL): Promise<string> {
-  const response = await fetch(url, { headers: { "user-agent": USER_AGENT } });
-  if (!response.ok) throw new Error(`Source returned ${response.status}.`);
-  return response.text();
+  const { buffer } = await safeFetch(url.toString(), {
+    accept: "text/html,application/xhtml+xml",
+    maxBytes: 3_000_000,
+    timeoutMs: 10_000,
+  });
+  return new TextDecoder("utf-8").decode(buffer);
 }
 
 /**
@@ -67,14 +75,14 @@ async function bestAvailableImage(
   return original;
 }
 
-/** Validates and normalises a user-supplied URL. */
-export function parseTargetUrl(raw: unknown): URL {
+/**
+ * Validates a user-supplied URL and rejects anything that resolves inside the
+ * network. Async because it has to resolve DNS to do that honestly.
+ */
+export async function parseTargetUrl(raw: unknown): Promise<URL> {
   if (!raw || typeof raw !== "string") throw new Error("A URL is required.");
-  const parsed = new URL(raw);
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Only http and https URLs are supported.");
-  }
-  return parsed;
+  const { url } = await assertPublicUrl(raw);
+  return url;
 }
 
 /** Headline links on a listing page, deduplicated and enriched from each target. */
@@ -190,15 +198,30 @@ function extractItems(html: string, baseUrl: string): ScrapedItem[] {
   return items;
 }
 
-async function enrichItems(items: ScrapedItem[]): Promise<ScrapedItem[]> {
-  const enriched: ScrapedItem[] = [];
+/** Upper bound on per-item lookups, so one listing can't fan out unbounded. */
+const MAX_ENRICHED = 12;
 
-  for (const item of items) {
-    const next: ScrapedItem = { ...item };
-    try {
-      const response = await fetch(item.url, { headers: { "user-agent": USER_AGENT } });
-      if (response.ok) {
-        const html = await response.text();
+async function enrichItems(items: ScrapedItem[]): Promise<ScrapedItem[]> {
+  // Deduplicate first — enriching two copies of the same URL is wasted egress.
+  const unique = items.filter(
+    (item, index, array) =>
+      array.findIndex((c) => normalizeUrl(c.url) === normalizeUrl(item.url)) ===
+      index
+  );
+
+  // Fetched in parallel with a hard per-request timeout inside safeFetch;
+  // sequentially this held the function open for as long as the slowest
+  // sixteen sites took to answer.
+  return Promise.all(
+    unique.slice(0, MAX_ENRICHED).map(async (item) => {
+      const next: ScrapedItem = { ...item };
+      try {
+        const { buffer } = await safeFetch(item.url, {
+          accept: "text/html,application/xhtml+xml",
+          maxBytes: 2_000_000,
+          timeoutMs: 8_000,
+        });
+        const html = new TextDecoder("utf-8").decode(buffer);
         const metaTitle = extractMetaContent(html, ["og:title", "twitter:title"]);
         const metaImage = extractMetaContent(html, ["og:image", "twitter:image", "twitter:image:src"]);
         if (metaTitle && looksLikeHeadline(metaTitle)) {
@@ -207,17 +230,17 @@ async function enrichItems(items: ScrapedItem[]): Promise<ScrapedItem[]> {
         if (metaImage) {
           next.image = resolveMaybeRelative(metaImage, item.url);
         }
+      } catch {
+        /* keep whatever the listing page gave us */
       }
-    } catch {
-    }
 
-    next.posterText = next.posterText || buildPosterText(next.title, "", "");
-    next.keywords = next.keywords?.length ? next.keywords : extractKeywords(next.title, next.posterText);
-    next.imageProxy = next.image ? `/api/image?url=${encodeURIComponent(next.image)}` : null;
-    enriched.push(next);
-  }
-
-  return enriched.filter((item, index, array) => array.findIndex((candidate) => normalizeUrl(candidate.url) === normalizeUrl(item.url)) === index);
+      next.posterText = next.posterText || buildPosterText(next.title, "", "");
+      next.keywords = next.keywords?.length ? next.keywords : extractKeywords(next.title, next.posterText);
+      // Was /api/image, which has never existed — every proxied image 404'd.
+      next.imageProxy = next.image ? `/api/pix/image?url=${encodeURIComponent(next.image)}` : null;
+      return next;
+    })
+  );
 }
 
 function extractMetaContent(html: string, names: string[]): string | null {

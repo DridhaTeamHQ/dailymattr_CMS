@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
+import { QixCard } from "@/components/QixCard";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
@@ -133,17 +134,18 @@ export default function KindListPage() {
   const preview = items.find((c) => c.id === previewId) ?? null;
   const queue = items.filter((c) => c.status === "in_review");
   const feed = items.filter((c) => c.status === "published");
+  // Pix and Qix share the poster-tile library; Trax stays a plain list.
+  const cardGrid = kind === "pix" || kind === "qix";
   const visible =
-    kind !== "pix" || tab === "all" ? items : tab === "queue" ? queue : feed;
+    !cardGrid || tab === "all" ? items : tab === "queue" ? queue : feed;
 
-  // Pix only — Qix and Trax stay on a single page for now.
   // Approving or deleting can empty the last page, so clamp before slicing.
   const size = PAGE_SIZES.pixGrid;
   const current = clampPage(page, visible.length, size);
   const paged = pageSlice(visible, current, size);
 
-  const PIX_TABS: [PixTab, string, number][] = [
-    ["all", "All Pix", items.length],
+  const GRID_TABS: [PixTab, string, number][] = [
+    ["all", `All ${meta.label}`, items.length],
     ...(reviewer
       ? ([["queue", "Awaiting QA", queue.length]] as [PixTab, string, number][])
       : []),
@@ -255,9 +257,9 @@ export default function KindListPage() {
         </div>
       </SectionHeader>
 
-      {kind === "pix" && items.length > 0 && (
+      {cardGrid && items.length > 0 && (
         <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-(--shadow-soft)">
-          {PIX_TABS.map(([t, label, count]) => (
+          {GRID_TABS.map(([t, label, count]) => (
             <button
               key={t}
               onClick={() => {
@@ -298,131 +300,7 @@ export default function KindListPage() {
             before publishing.
           </p>
         </div>
-      ) : isQix ? (
-        /* ── QIX SHORTS VIDEO GRID (PROMINENT 9:16 SHORTS TILES) ──────── */
-        <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-          {items.map((c, i) => {
-            const author = users.find((u) => u.id === c.createdBy);
-            const dateStr = formatDateTime(c.publishedAt || c.updatedAt || c.createdAt);
-            const relTime = timeAgo(c.publishedAt || c.updatedAt || c.createdAt);
-            const hasVideo =
-              c.mediaUrl &&
-              (c.mediaUrl.endsWith(".mp4") ||
-                c.mediaUrl.endsWith(".webm") ||
-                c.mediaUrl.startsWith("data:video") ||
-                c.mediaUrl.includes("gtv-videos") ||
-                c.mediaUrl.includes("mixkit"));
-
-            return (
-              <motion.div
-                key={c.id}
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.04, 0.2), duration: 0.35 }}
-                className="group relative aspect-[9/16] min-h-[430px] max-h-[470px] w-full overflow-hidden rounded-3xl border border-line bg-ink shadow-soft transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lift cursor-pointer"
-                onClick={() => setActiveVideo(c)}
-              >
-                {/* Full-bleed Video / Image Background */}
-                {hasVideo ? (
-                  <video
-                    src={c.mediaUrl!}
-                    poster={c.coverUrl ?? undefined}
-                    muted
-                    loop
-                    playsInline
-                    onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
-                    onMouseLeave={(e) => {
-                      const v = e.currentTarget as HTMLVideoElement;
-                      v.pause();
-                      v.currentTime = 0;
-                    }}
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : c.coverUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={c.coverUrl}
-                    alt={c.title}
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-ink via-ink-2 to-black text-white/50">
-                    <Clapperboard size={36} />
-                    <span className="text-xs font-semibold">Shorts Video</span>
-                  </div>
-                )}
-
-                {/* Top Overlay: Status & Duration */}
-                <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
-                  <div className="pointer-events-auto">
-                    <StatusPill status={c.status} />
-                  </div>
-                  {c.durationSec && (
-                    <span className="rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md border border-white/10">
-                      {fmtDur(c.durationSec)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Center Hover Play Icon */}
-                <div
-                  className="absolute inset-0 flex items-center justify-center z-10 opacity-90 group-hover:opacity-100 transition-opacity"
-                  title="Play Short"
-                >
-                  <div className="flex h-13 w-13 items-center justify-center rounded-full bg-accent/90 text-white shadow-xl backdrop-blur-md transition-transform duration-300 group-hover:scale-110">
-                    <Play size={20} className="ml-0.5 fill-white" />
-                  </div>
-                </div>
-
-                {/* Bottom Overlaid Gradient Content */}
-                <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/75 to-transparent p-4 pt-12 text-white">
-                  {/* Timestamp & Date */}
-                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-white/85">
-                    <Calendar size={12} className="text-accent shrink-0" />
-                    <span className="truncate">{dateStr}</span>
-                    <span className="text-white/40">•</span>
-                    <span className="text-white/70 truncate">{relTime}</span>
-                  </div>
-
-                  {/* Title */}
-                  <p className="line-clamp-2 text-sm font-bold leading-snug text-white drop-shadow-md">
-                    {c.title}
-                  </p>
-
-                  {/* Summary / Tag */}
-                  <p className="mt-1 line-clamp-1 text-xs text-white/70">
-                    {c.summary}
-                  </p>
-
-                  {/* Footer & Quick Actions */}
-                  <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-white/15 text-xs">
-                    <span className="truncate text-white/80 font-medium max-w-[100px]">
-                      {author?.fullName ?? "DailyMattr"}
-                    </span>
-
-                    <div className="flex items-center gap-2">
-                      {/* Stats Badge */}
-                      <span className="flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400 backdrop-blur border border-emerald-500/30 shadow-sm">
-                        <ShieldCheck size={12} />
-                        <span>{c.factScore ? `FACT ${c.factScore}` : "FACT 95"}</span>
-                      </span>
-
-                      <Link
-                        href={`/content/qix/editor?id=${c.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white hover:text-ink transition-all"
-                        title="Edit Qix"
-                      >
-                        <Edit3 size={12} />
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      ) : kind === "pix" ? (
+      ) : cardGrid ? (
         visible.length === 0 ? (
           <div className="card flex flex-col items-center gap-2 p-14 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
@@ -433,40 +311,53 @@ export default function KindListPage() {
             </p>
             <p className="max-w-xs text-sm text-muted">
               {tab === "queue"
-                ? "Pix submitted by writers land here for review."
-                : "Approved Pix appear here once the chief editor publishes them."}
+                ? `${meta.label} submitted by writers land here for review.`
+                : `Approved ${meta.label} appear here once the chief editor publishes them.`}
             </p>
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {paged.map((c, i) => (
-                <motion.div
-                  key={c.id}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i * 0.05, 0.3), duration: 0.4 }}
-                >
-                  <PixCard
-                    item={c}
-                    author={users.find((u) => u.id === c.createdBy)?.fullName}
-                    onView={() => setPreviewId(c.id)}
-                    actions={reviewer ? reviewActions(c) : undefined}
-                  />
-                </motion.div>
-              ))}
+              {paged.map((c, i) => {
+                const author = users.find((u) => u.id === c.createdBy)?.fullName;
+                const actions = reviewer ? reviewActions(c) : undefined;
+                return (
+                  <motion.div
+                    key={c.id}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(i * 0.05, 0.3), duration: 0.4 }}
+                  >
+                    {isQix ? (
+                      <QixCard
+                        item={c}
+                        author={author}
+                        onView={() => setActiveVideo(c)}
+                        actions={actions}
+                      />
+                    ) : (
+                      <PixCard
+                        item={c}
+                        author={author}
+                        onView={() => setPreviewId(c.id)}
+                        actions={actions}
+                      />
+                    )}
+                  </motion.div>
+                );
+              })}
             </div>
             <Pager
               page={current}
               total={visible.length}
               size={size}
               onPage={setPage}
-              label="Pix"
+              label={meta.label}
             />
           </>
         )
       ) : (
-        /* ── STANDARD GRID (PIX / TRAX) ──────────────────────────────── */
+        /* ── STANDARD LIST (TRAX) ────────────────────────────────────── */
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {items.map((c, i) => {
             const author = users.find((u) => u.id === c.createdBy);
