@@ -62,7 +62,10 @@ export interface ContentItem {
   tags: string[];
   language: string;
   state: string | null;
-  coverUrl: string | null; // data URL or remote URL (mock for media_assets)
+  /** Display copy — what grids and the app load. Kept small on purpose. */
+  coverUrl: string | null;
+  /** Lossless full-resolution original, when the composer made one. */
+  coverMasterUrl: string | null;
   mediaUrl: string | null; // video (qix) / audio (trax) URL
   durationSec: number | null;
   sourceLinks: { title: string; url: string }[];

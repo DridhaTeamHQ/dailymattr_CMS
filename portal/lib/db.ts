@@ -58,6 +58,7 @@ const toContent = (r: Row): ContentItem => ({
   language: (r.language as string) ?? "en",
   state: (r.state as string | null) ?? null,
   coverUrl: (r.cover_url as string | null) ?? null,
+  coverMasterUrl: (r.cover_master_url as string | null) ?? null,
   mediaUrl: (r.media_url as string | null) ?? null,
   durationSec: (r.duration_sec as number | null) ?? null,
   sourceLinks: (r.source_links as { title: string; url: string }[]) ?? [],
@@ -92,6 +93,7 @@ const fromContent = (c: Partial<ContentItem>): Row => {
   put("language", c.language);
   put("state", c.state);
   put("cover_url", c.coverUrl);
+  put("cover_master_url", c.coverMasterUrl);
   put("media_url", c.mediaUrl);
   put("duration_sec", c.durationSec);
   put("source_links", c.sourceLinks);

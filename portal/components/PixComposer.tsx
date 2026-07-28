@@ -10,6 +10,7 @@ import {
   pixPointsFromSummary,
 } from "@/lib/pix";
 import type { ImageSuggestion } from "@/lib/pixImageSearch";
+import { COVERS, UploadError, uploadBlob } from "@/lib/storage";
 import {
   useCallback,
   useEffect,
@@ -98,14 +99,23 @@ const FILTER_LABELS: Record<PixFilter, string> = {
 };
 
 /**
- * The cover is stored inline on the item, so it travels in every row the
- * libraries load — a 2× PNG runs to ~6 MB and would be re-fetched on every
- * grid. Covers therefore commit at design size as JPEG, which lands around
- * 300 KB and is still larger than anything the app renders. Downloads keep the
- * builder's full-resolution PNG.
+ * Committing a poster writes two files to Storage.
+ *
+ * The master is a lossless PNG at the largest size this browser will actually
+ * encode. It is the archive copy: nothing is thrown away, and it is what a
+ * reprint or a re-crop should start from. Covers used to be squeezed into a
+ * database column, which is why they were downgraded to 1x JPEG; that reason
+ * is gone.
+ *
+ * The display copy exists because a library grid loads a dozen covers at once
+ * and a dozen lossless posters is tens of megabytes. It is WebP at q0.94 and
+ * design size — visually indistinguishable at the size anything renders it,
+ * and around 250 KB.
  */
-const COVER_SCALE = 1;
-const COVER_QUALITY = 0.9;
+const MASTER_LONG_EDGES = [7680, 6144, 3840] as const;
+const DISPLAY_SCALE = 1;
+const DISPLAY_TYPE = "image/webp";
+const DISPLAY_QUALITY = 0.94;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -140,8 +150,12 @@ export default function PixComposer({
   source: { title: string; url: string } | null;
   onSource: (source: { title: string; url: string } | null) => void;
   coverUrl: string | null;
-  /** Called with the exported PNG data URL. */
-  onCommit: (dataUrl: string) => void;
+  /**
+   * Called with the stored cover URL. `masterUrl` accompanies a committed
+   * poster — the lossless original — and is null when the cover is just a
+   * source photograph that has not been composed yet.
+   */
+  onCommit: (coverUrl: string, masterUrl: string | null) => void;
   disabled?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -371,51 +385,21 @@ export default function PixComposer({
     }));
   };
 
-  /** Renders offscreen at `scale` so the export isn't preview-resolution. */
-  const exportPoster = useCallback(
-    (scale: number, type: string, quality?: number): string | null => {
-      const L = getLayout(state);
-      const out = document.createElement("canvas");
-      out.width = L.W * scale;
-      out.height = L.H * scale;
-      const ctx = out.getContext("2d");
-      if (!ctx) return null;
-      draw(ctx, state, assets, scale);
-      try {
-        return out.toDataURL(type, quality);
-      } catch {
-        // A cross-origin photograph taints the canvas and blocks the read.
-        return null;
-      }
-    },
-    [state, assets, draw]
-  );
-
-  const commit = () => {
-    setBusy(true);
-    const url = exportPoster(COVER_SCALE, "image/jpeg", COVER_QUALITY);
-    setBusy(false);
-    if (!url) {
-      setImgError(
-        "Export blocked — that image is hosted elsewhere and won't allow reading it back. Upload the file instead."
-      );
-      return;
-    }
-    setExported(url);
-    onCommit(url);
-  };
-
   /**
-   * Download at the highest resolution this browser will actually encode,
-   * stepping 8K → 6K → 4K. A canvas that is too large fails silently rather
-   * than throwing, so each tier is checked by the size of what came back.
+   * Renders to a Blob at the largest of `targets` this browser will encode.
+   *
+   * An oversized canvas fails silently rather than throwing — toBlob hands back
+   * null, or a couple of hundred bytes of nothing — so each tier is judged by
+   * what actually came back, and the next one down is tried.
    */
-  const download = async () => {
-    const L = getLayout(state);
-    setBusy(true);
-    setImgError(null);
-    try {
-      for (const target of EXPORT_LONG_EDGES) {
+  const renderBlob = useCallback(
+    async (
+      targets: readonly number[],
+      type: string,
+      quality?: number
+    ): Promise<{ blob: Blob; width: number; height: number } | null> => {
+      const L = getLayout(state);
+      for (const target of targets) {
         const scale = scaleForLongEdge(target, L.W, L.H);
         const out = document.createElement("canvas");
         try {
@@ -430,23 +414,89 @@ export default function PixComposer({
 
         const blob = await new Promise<Blob | null>((resolve) => {
           try {
-            out.toBlob(resolve, "image/png");
+            out.toBlob(resolve, type, quality);
           } catch {
             resolve(null);
           }
         });
         if (!blob || blob.size <= 2000) continue;
+        return { blob, width: out.width, height: out.height };
+      }
+      return null;
+    },
+    [state, assets, draw]
+  );
 
-        const href = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = href;
-        a.download = `pix-${state.ratio.replace(":", "x")}-${out.width}x${out.height}.png`;
-        a.click();
-        URL.revokeObjectURL(href);
-        setExportNote(`Saved ${out.width} × ${out.height}`);
+  /**
+   * Commit uploads the poster and hands back URLs, rather than inlining a data
+   * URL on the item. Two files: the lossless master, and the display copy the
+   * grids load. See MASTER_LONG_EDGES above for why both exist.
+   */
+  const commit = async () => {
+    setBusy(true);
+    setImgError(null);
+    setExportNote(null);
+    try {
+      const L = getLayout(state);
+      const displayEdge = Math.max(L.W, L.H) * DISPLAY_SCALE;
+
+      const master = await renderBlob(MASTER_LONG_EDGES, "image/png");
+      const display = await renderBlob(
+        [displayEdge],
+        DISPLAY_TYPE,
+        DISPLAY_QUALITY
+      );
+
+      if (!master || !display) {
+        // Almost always a tainted canvas rather than a size problem: a
+        // cross-origin photograph blocks reading the pixels back.
+        setImgError(
+          "Export blocked — that image is hosted elsewhere and won't allow reading it back. Upload the file instead."
+        );
         return;
       }
-      setImgError("This browser could not encode the poster at any size.");
+
+      const [displayUrl, masterUrl] = await Promise.all([
+        uploadBlob(COVERS, display.blob, "pix"),
+        uploadBlob(COVERS, master.blob, "pix/master"),
+      ]);
+
+      setExported(displayUrl);
+      onCommit(displayUrl, masterUrl);
+      setExportNote(
+        `Committed — master ${master.width} × ${master.height} PNG, ${Math.round(master.blob.size / 1024)} KB`
+      );
+    } catch (e) {
+      setImgError(
+        e instanceof UploadError
+          ? `Upload failed: ${e.message}`
+          : "Could not commit the poster."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Download at the highest resolution this browser will actually encode,
+   * stepping 8K → 6K → 4K.
+   */
+  const download = async () => {
+    setBusy(true);
+    setImgError(null);
+    try {
+      const out = await renderBlob(EXPORT_LONG_EDGES, "image/png");
+      if (!out) {
+        setImgError("This browser could not encode the poster at any size.");
+        return;
+      }
+      const href = URL.createObjectURL(out.blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `pix-${state.ratio.replace(":", "x")}-${out.width}x${out.height}.png`;
+      a.click();
+      URL.revokeObjectURL(href);
+      setExportNote(`Saved ${out.width} × ${out.height}`);
     } finally {
       setBusy(false);
     }
@@ -504,15 +554,11 @@ export default function PixComposer({
       }
 
       if (data.imageProxy) {
+        // Stored as fetched — the bytes the publisher served, not a re-encode.
         const blob = await (await fetch(data.imageProxy)).blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(new Error("Could not read the image."));
-          reader.readAsDataURL(blob);
-        });
+        const stored = await uploadBlob(COVERS, blob, "source");
         setImgError(null);
-        onCommit(dataUrl);
+        onCommit(stored, null);
         setScrapeMsg(
           written
             ? `Written from ${new URL(url).hostname} — check every fact before submitting.`
@@ -565,13 +611,8 @@ export default function PixComposer({
     setImgError(null);
     try {
       const blob = await (await fetch(s.imageProxy)).blob();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("Could not read that image."));
-        reader.readAsDataURL(blob);
-      });
-      onCommit(dataUrl);
+      const stored = await uploadBlob(COVERS, blob, "source");
+      onCommit(stored, null);
       setSuggestions(null);
     } catch {
       setImgError("That image could not be loaded — try another.");
@@ -616,16 +657,27 @@ export default function PixComposer({
   /**
    * An upload becomes the cover immediately, so the poster and the CMS never
    * disagree about which photograph this Pix uses. The load effect picks the
-   * new data URL up from `coverUrl` and redraws.
+   * stored URL up from `coverUrl` and redraws.
+   *
+   * The File goes to Storage as-is. Reading it into a data URL first and
+   * re-encoding would lose detail before the poster is even composed.
    */
-  const onUpload = (file: File | undefined) => {
+  const onUpload = async (file: File | undefined) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImgError(null);
-      onCommit(String(reader.result));
-    };
-    reader.readAsDataURL(file);
+    setBusy(true);
+    setImgError(null);
+    try {
+      const stored = await uploadBlob(COVERS, file, "source");
+      onCommit(stored, null);
+    } catch (e) {
+      setImgError(
+        e instanceof UploadError
+          ? `Upload failed: ${e.message}`
+          : "Could not upload that image."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const L = LAYOUT_PRESETS[state.ratio];

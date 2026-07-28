@@ -20,6 +20,7 @@ import {
   updateContent,
 } from "@/lib/db";
 import { slugify } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import {
   PIX_POINT_COUNT,
   getPixPoints,
@@ -49,6 +50,7 @@ const emptyItem = (kind: ContentKind, userId: string): ContentItem => ({
   language: "en",
   state: null,
   coverUrl: null,
+  coverMasterUrl: null,
   mediaUrl: null,
   durationSec: null,
   sourceLinks: [],
@@ -95,9 +97,22 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     setScrapeMsg(null);
 
     try {
+      // The route stores the download in Supabase Storage as us, so it needs
+      // our session — Storage RLS decides, not a service key.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setScrapeErr("Your session expired — sign in again to import video.");
+        return;
+      }
+
       const res = await fetch("/api/scrape-video", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ url: ytUrl.trim() }),
       });
 
@@ -655,7 +670,12 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 onSource={(s) => set("sourceLinks", s ? [s] : [])}
                 coverUrl={item.coverUrl}
                 disabled={!editable}
-                onCommit={(dataUrl) => set("coverUrl", dataUrl)}
+                onCommit={(url, masterUrl) => {
+                  set("coverUrl", url);
+                  // Cleared when the cover is a bare source photograph, so the
+                  // master never outlives the poster it belongs to.
+                  set("coverMasterUrl", masterUrl);
+                }}
               />
               <input
                 className="field mt-3"

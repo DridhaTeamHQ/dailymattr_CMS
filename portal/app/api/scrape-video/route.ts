@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { acquireSlot, clientIp, rateLimit, releaseSlot } from "@/lib/rate-limit";
 
@@ -10,6 +12,40 @@ export const dynamic = "force-dynamic";
 /** Downloading and remuxing a Reel takes real time; a stuck job must not hang a worker. */
 const JOB_TIMEOUT_MS = 180_000;
 const MAX_URL_CHARS = 512;
+
+/**
+ * The bucket's own ceiling is 500 MB, but the file is held in memory on its way
+ * there, so the route refuses earlier than the bucket would.
+ */
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+const VIDEO_TYPES: Record<string, string> = {
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+};
+
+/**
+ * Uploads as the caller, not as the service.
+ *
+ * The route takes the browser's session token and hands it to Storage, so the
+ * existing RLS policy on storage.objects decides — the same rule that governs
+ * an upload from the composer. A service-role key would bypass RLS and, since
+ * this route is reachable without a session, would let anyone fill the bucket.
+ */
+function callerStorage(req: Request) {
+  const auth = req.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: auth } },
+  });
+}
 
 /** Video downloads are far heavier than a text scrape, so the quotas are tighter. */
 const RULES = (ip: string) => [
@@ -178,10 +214,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: checked.error }, { status: 400 });
     }
 
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    const result = await runWorker(checked.url, uploadsDir);
+    const storage = callerStorage(req);
+    if (!storage) {
+      return NextResponse.json(
+        { success: false, error: "Sign in again — this import needs your session." },
+        { status: 401 }
+      );
+    }
+
+    // A private temp directory rather than public/uploads. Nothing here is
+    // served from disk any more: the file goes to Storage and the directory is
+    // removed, so this works the same on a server with a read-only filesystem.
+    const uploadsDir = fs.mkdtempSync(path.join(os.tmpdir(), "dm-video-"));
+    let result: WorkerResult;
+    try {
+      result = await runWorker(checked.url, uploadsDir);
+    } catch (e) {
+      fs.rmSync(uploadsDir, { recursive: true, force: true });
+      throw e;
+    }
 
     if (!result.success || !result.filename) {
+      fs.rmSync(uploadsDir, { recursive: true, force: true });
       const status =
         result.code === "missing_dependency" || result.code === "spawn_failed"
           ? 503
@@ -196,29 +250,59 @@ export async function POST(req: Request) {
       );
     }
 
-    // Guard against a worker returning a path outside the uploads directory.
+    // Guard against a worker returning a path outside the temp directory.
     const safeName = path.basename(result.filename);
-    if (!fs.existsSync(path.join(uploadsDir, safeName))) {
-      return NextResponse.json(
-        { success: false, error: "The downloaded file is missing." },
-        { status: 500 }
+    const localPath = path.join(uploadsDir, safeName);
+
+    let videoUrl: string;
+    try {
+      if (!fs.existsSync(localPath)) {
+        return NextResponse.json(
+          { success: false, error: "The downloaded file is missing." },
+          { status: 500 }
+        );
+      }
+
+      const stat = fs.statSync(localPath);
+      if (stat.size > MAX_UPLOAD_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `That video is ${Math.round(stat.size / 1_048_576)} MB, over the ${MAX_UPLOAD_BYTES / 1_048_576} MB import limit.`,
+          },
+          { status: 413 }
+        );
+      }
+
+      const ext = path.extname(safeName).toLowerCase();
+      const key = `video/${crypto.randomUUID()}${ext || ".mp4"}`;
+      // Uploaded byte for byte — the file yt-dlp produced is the file stored,
+      // with no re-encode and no quality step in between.
+      const { error: upErr } = await storage.storage.from("media").upload(
+        key,
+        fs.readFileSync(localPath),
+        {
+          contentType: VIDEO_TYPES[ext] ?? "application/octet-stream",
+          cacheControl: "31536000",
+          upsert: false,
+        }
       );
+      if (upErr) {
+        console.error("[scrape-video] storage upload failed:", upErr.message);
+        return NextResponse.json(
+          { success: false, error: `Could not store the video: ${upErr.message}` },
+          { status: 502 }
+        );
+      }
+      videoUrl = storage.storage.from("media").getPublicUrl(key).data.publicUrl;
+    } finally {
+      // The download only ever existed to be uploaded.
+      fs.rmSync(uploadsDir, { recursive: true, force: true });
     }
 
     console.info(
       `[scrape-video] ${safeName} · ${Math.round((result.sizeBytes ?? 0) / 1024)}KB · ${result.durationSec ?? "?"}s`
     );
-
-    /* Absolute, because this URL is going into a database the phone reads.
-     *
-     * It used to be saved as `/api/media/<file>`, which resolves against
-     * whoever asks for it — fine in a browser pointed at this server, and
-     * meaningless on a device, where it is not a URL at all. A Qix imported
-     * that way went live with media the reader could never fetch.
-     *
-     * MEDIA_BASE_URL is for when the CMS runs behind a domain or proxy that
-     * the request origin does not reveal; otherwise the origin is right. */
-    const base = (process.env.MEDIA_BASE_URL ?? new URL(req.url).origin).replace(/\/+$/, "");
 
     return NextResponse.json({
       success: true,
@@ -227,7 +311,16 @@ export async function POST(req: Request) {
       isDownloaded: true,
       url: checked.url,
       title: result.title || null,
-      videoUrl: `${base}/api/media/${encodeURIComponent(safeName)}`,
+      /* Absolute, because this URL goes into a database the phone reads.
+       *
+       * It used to be saved as `/api/media/<file>`, which resolves against
+       * whoever asks for it — fine in a browser pointed at this server, and
+       * meaningless on a device, where it is not a URL at all. A Qix imported
+       * that way went live with media the reader could never fetch.
+       *
+       * A Storage public URL is absolute wherever it is read, so the origin no
+       * longer has to be guessed and MEDIA_BASE_URL is no longer needed. */
+      videoUrl,
       coverUrl: result.coverUrl || null,
       durationSec: result.durationSec ?? null,
       uploader: result.uploader || null,

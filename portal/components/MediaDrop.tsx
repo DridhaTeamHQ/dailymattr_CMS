@@ -2,6 +2,15 @@
 
 import { useRef, useState } from "react";
 import { UploadCloud, X } from "lucide-react";
+import { MEDIA, UploadError, uploadBlob } from "@/lib/storage";
+
+/**
+ * Files went into the item as base64 data URLs, which is why they were capped
+ * at 15 MB — base64 inflates by a third, so a 15 MB clip became a 20 MB string
+ * in a database column. They upload to Storage now and the row keeps a URL, so
+ * the ceiling is the bucket's and nothing is re-encoded on the way in.
+ */
+const MAX_BYTES = 200 * 1024 * 1024;
 
 const getYoutubeId = (url: string | null) => {
   if (!url) return null;
@@ -23,7 +32,8 @@ export default function MediaDrop({
   aspectRatio = "standard",
 }: {
   value: string | null;
-  onChange: (dataUrl: string | null) => void;
+  /** Receives the stored file's public URL, or null when cleared. */
+  onChange: (url: string | null) => void;
   onDurationChange?: (sec: number) => void;
   accept?: string;
   hint?: string;
@@ -32,17 +42,30 @@ export default function MediaDrop({
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handle = (file: File | undefined) => {
+  const handle = async (file: File | undefined) => {
     setErr(null);
-    if (!file) return;
-    if (file.size > 15 * 1024 * 1024) {
-      setErr("File is larger than 15 MB limit — use a video URL instead.");
+    if (!file || busy) return;
+    if (file.size > MAX_BYTES) {
+      setErr(
+        `That file is ${Math.round(file.size / 1_048_576)} MB, over the ${MAX_BYTES / 1_048_576} MB limit — use a video URL instead.`
+      );
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => onChange(String(reader.result));
-    reader.readAsDataURL(file);
+    setBusy(true);
+    try {
+      // The File is sent as-is: no data-URL round trip, no re-encode.
+      onChange(await uploadBlob(MEDIA, file, "upload"));
+    } catch (e) {
+      setErr(
+        e instanceof UploadError
+          ? `Upload failed: ${e.message}`
+          : "Could not upload that file."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const ytId = getYoutubeId(value);
@@ -117,6 +140,7 @@ export default function MediaDrop({
     <div>
       <button
         type="button"
+        disabled={busy}
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -143,9 +167,17 @@ export default function MediaDrop({
         </span>
         <div className="space-y-1">
           <span className="block text-sm font-bold text-ink">
-            Drop a media file or <span className="text-accent">browse</span>
+            {busy ? (
+              "Uploading…"
+            ) : (
+              <>
+                Drop a media file or <span className="text-accent">browse</span>
+              </>
+            )}
           </span>
-          <span className="block text-xs font-medium text-faint">{hint}</span>
+          <span className="block text-xs font-medium text-faint">
+            {busy ? "Sending the original file, unchanged" : hint}
+          </span>
         </div>
       </button>
       {err && <p className="mt-2 text-xs font-medium text-rose">{err}</p>}
