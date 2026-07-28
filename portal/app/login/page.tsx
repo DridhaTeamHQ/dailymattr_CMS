@@ -9,18 +9,12 @@ import { ROLE_META, type Role } from "@/lib/types";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
 
-const DEMO_ACCOUNTS: Record<Role, string> = {
-  super_admin: "admin@dailymattr.com",
-  chief_editor: "editor@dailymattr.com",
-  writer: "writer@dailymattr.com",
-  qa: "qa@dailymattr.com",
-};
-
 export default function LoginPage() {
   const { user, ready, login } = useAuth();
   const router = useRouter();
   const [role, setRole] = useState<Role>("writer");
-  const [email, setEmail] = useState(DEMO_ACCOUNTS.writer);
+  // Nothing is pre-filled: the sign-in page shouldn't publish who has accounts.
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +26,6 @@ export default function LoginPage() {
 
   const pickRole = (r: Role) => {
     setRole(r);
-    setEmail(DEMO_ACCOUNTS[r]);
     setError(null);
   };
 
@@ -172,7 +165,7 @@ export default function LoginPage() {
                   type={showPw ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="mattr123 (demo)"
+                  placeholder="Your password"
                   autoComplete="current-password"
                   required
                 />
@@ -216,8 +209,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-5 text-center text-[11px] leading-relaxed text-faint">
-            Demo mode — pick a role and sign in with password{" "}
-            <span className="font-bold text-muted">mattr123</span>
+            Trouble signing in? Ask a Studio administrator to check your access.
           </p>
         </motion.div>
       </div>

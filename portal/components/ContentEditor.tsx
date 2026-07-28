@@ -788,15 +788,26 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           // it only holds two buttons and a status line.
           className="sticky bottom-4 z-30 mt-5 ml-auto flex w-fit max-w-full items-center gap-2 rounded-full bg-ink p-1.5 pl-4 shadow-(--shadow-pop)"
         >
-          <span className="hidden text-[11px] font-medium whitespace-nowrap text-white/55 sm:block">
-            {saved === "draft"
-              ? "Draft saved ✓"
-              : saved === "review"
-                ? "Sent to QA ✓"
-                : item.status === "rejected"
-                  ? "Revise and resubmit"
-                  : "Autosaves locally"}
-          </span>
+          {/* There is no autosave — Draft and Submit are the only writes — so
+              this says what happened rather than promising anything. Errors
+              stay visible at every width; the rest is a small-screen luxury. */}
+          {saveErr ? (
+            <span className="max-w-[15rem] truncate text-[11px] font-medium text-rose">
+              {saveErr}
+            </span>
+          ) : (
+            <span className="hidden text-[11px] font-medium whitespace-nowrap text-white/55 sm:block">
+              {saved === "draft"
+                ? "Draft saved ✓"
+                : saved === "review"
+                  ? "Sent to QA ✓"
+                  : item.status === "rejected"
+                    ? "Revise and resubmit"
+                    : saving
+                      ? "Saving…"
+                      : ""}
+            </span>
+          )}
           <button
             onClick={() => persist(false)}
             disabled={!item.title}

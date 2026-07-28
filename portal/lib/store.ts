@@ -1,11 +1,10 @@
 "use client";
 
 /**
- * Formatting helpers.
+ * Presentation helpers — dates, relative times and slugs.
  *
- * This module used to be a localStorage-backed mock store. All data access now
- * goes through lib/db.ts (Supabase); what remains here is the pure presentation
- * logic that several components already import from this path.
+ * All data access lives in lib/db.ts (Supabase). Nothing here reads or writes
+ * browser storage.
  */
 
 export const uid = () =>

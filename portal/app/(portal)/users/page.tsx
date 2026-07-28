@@ -171,11 +171,18 @@ export default function UsersPage() {
           </div>
           <button
             onClick={invite}
-            disabled={!form.name || !form.email}
+            disabled={!form.name || !form.email || busy}
             className="btn-accent w-full py-3 text-sm disabled:opacity-40"
           >
-            Send invite (demo)
+            {busy ? "Adding…" : "Add to team"}
           </button>
+          {/* Honest about the gap: this writes the Studio profile, but the
+              sign-in account is created separately in Supabase Auth. */}
+          <p className="text-[11px] leading-relaxed text-faint">
+            This creates their Studio profile and role. They can sign in once an
+            administrator has created their login in Supabase Auth with the same
+            email address.
+          </p>
         </div>
       </Modal>
     </div>

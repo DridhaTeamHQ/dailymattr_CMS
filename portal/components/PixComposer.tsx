@@ -96,9 +96,9 @@ const FILTER_LABELS: Record<PixFilter, string> = {
 };
 
 /**
- * The cover is stored inline on the item, which in demo mode means
- * localStorage — a 2× PNG runs to ~6 MB and fills the quota after a couple of
- * Pix. Covers therefore commit at design size as JPEG, which lands around
+ * The cover is stored inline on the item, so it travels in every row the
+ * libraries load — a 2× PNG runs to ~6 MB and would be re-fetched on every
+ * grid. Covers therefore commit at design size as JPEG, which lands around
  * 300 KB and is still larger than anything the app renders. Downloads keep the
  * builder's full-resolution PNG.
  */
