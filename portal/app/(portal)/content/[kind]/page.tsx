@@ -23,6 +23,7 @@ import {
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
+import { TraxCard } from "@/components/TraxCard";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
@@ -118,6 +119,7 @@ export default function KindListPage() {
   const Icon = ICONS[kind as keyof typeof ICONS];
 
   const isQix = kind === "qix";
+  const isTrax = kind === "trax";
   const reviewer = can.review(user.role);
   const publisher = can.publish(user.role);
 
@@ -345,6 +347,13 @@ export default function KindListPage() {
                         onView={() => setActiveVideo(c)}
                         actions={actions}
                       />
+                    ) : isTrax ? (
+                      <TraxCard
+                        item={c}
+                        author={author}
+                        onView={() => setActiveVideo(c)}
+                        actions={actions}
+                      />
                     ) : (
                       <PixCard
                         item={c}
@@ -457,9 +466,36 @@ export default function KindListPage() {
                 <X size={18} />
               </button>
 
-              {/* 9:16 Video Player Column */}
+              {/* Media Player Column */}
               <div className="relative flex items-center justify-center bg-black md:w-1/2 aspect-[9/16] max-h-[70vh] md:max-h-[85vh] mx-auto overflow-hidden">
-                {activeVideo.mediaUrl && getYoutubeId(activeVideo.mediaUrl) ? (
+                {activeVideo.kind === "trax" || kind === "trax" ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-center">
+                    {activeVideo.coverUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={activeVideo.coverUrl}
+                        alt={activeVideo.title}
+                        className="h-44 w-44 rounded-2xl object-cover shadow-2xl ring-1 ring-white/10"
+                      />
+                    ) : (
+                      <div className="flex h-44 w-44 items-center justify-center rounded-2xl bg-white/5 text-accent ring-1 ring-white/10">
+                        <AudioLines size={48} />
+                      </div>
+                    )}
+                    {activeVideo.mediaUrl ? (
+                      <audio
+                        src={activeVideo.mediaUrl}
+                        controls
+                        autoPlay
+                        className="w-full max-w-xs"
+                      />
+                    ) : (
+                      <span className="text-xs font-semibold text-white/50">
+                        Audio Explainer Trax
+                      </span>
+                    )}
+                  </div>
+                ) : activeVideo.mediaUrl && getYoutubeId(activeVideo.mediaUrl) ? (
                   <iframe
                     src={`https://www.youtube.com/embed/${getYoutubeId(activeVideo.mediaUrl)}?autoplay=1&mute=0&controls=1&loop=1`}
                     className="h-full w-full object-cover border-0"
@@ -537,7 +573,7 @@ export default function KindListPage() {
 
                 <div className="mt-6 flex items-center gap-3 pt-4 border-t border-line">
                   <Link
-                    href={`/content/qix/editor?id=${activeVideo.id}`}
+                    href={`/content/${activeVideo.kind || kind}/editor?id=${activeVideo.id}`}
                     onClick={() => setActiveVideo(null)}
                     className="btn-accent flex-1 flex items-center justify-center gap-2 py-3 text-sm"
                   >
