@@ -95,7 +95,11 @@ export default function ArticlesPage() {
 
   const saveOverrides = async (
     art: NewsStudioArticle,
-    patch: { titleOverride: string | null; summaryOverride: string | null }
+    patch: {
+      titleOverride: string | null;
+      summaryOverride: string | null;
+      imageOverride: string | null;
+    }
   ) => {
     await updateSelection(art.id, patch);
     await logAudit(user, "edited app copy for", "newsstudio article", art.title);
