@@ -24,6 +24,7 @@ import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
 import { TraxCard } from "@/components/TraxCard";
+import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
@@ -35,6 +36,8 @@ import {
 } from "@/lib/db";
 import { formatDateTime, timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { mediaBlocker } from "@/lib/media";
+import { estimateDurationSec } from "@/lib/tts";
 import {
   KIND_META,
   type ContentItem,
@@ -471,33 +474,27 @@ export default function KindListPage() {
               {/* Media Player Column */}
               <div className="relative flex items-center justify-center bg-black md:w-1/2 aspect-[9/16] max-h-[70vh] md:max-h-[85vh] mx-auto overflow-hidden">
                 {activeVideo.kind === "trax" || kind === "trax" ? (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-center">
-                    {activeVideo.coverUrl ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={activeVideo.coverUrl}
-                        alt={activeVideo.title}
-                        decoding="async"
-                        className="h-44 w-44 rounded-2xl object-cover shadow-2xl ring-1 ring-white/10"
-                      />
-                    ) : (
-                      <div className="flex h-44 w-44 items-center justify-center rounded-2xl bg-white/5 text-accent ring-1 ring-white/10">
-                        <AudioLines size={48} />
-                      </div>
-                    )}
-                    {activeVideo.mediaUrl ? (
-                      <audio
-                        src={activeVideo.mediaUrl}
-                        controls
-                        autoPlay
-                        className="w-full max-w-xs"
-                      />
-                    ) : (
-                      <span className="text-xs font-semibold text-white/50">
-                        Audio Explainer Trax
-                      </span>
-                    )}
-                  </div>
+                  <TraxAudioPlayer
+                    item={activeVideo}
+                    author={users.find((u) => u.id === activeVideo.createdBy)?.fullName}
+                    onClose={() => setActiveVideo(null)}
+                    onNext={() => {
+                      const traxList = items.filter((i) => i.kind === "trax");
+                      const idx = traxList.findIndex((i) => i.id === activeVideo.id);
+                      if (traxList.length > 0) {
+                        const nextIdx = (idx + 1) % traxList.length;
+                        setActiveVideo(traxList[nextIdx]);
+                      }
+                    }}
+                    onPrevious={() => {
+                      const traxList = items.filter((i) => i.kind === "trax");
+                      const idx = traxList.findIndex((i) => i.id === activeVideo.id);
+                      if (traxList.length > 0) {
+                        const prevIdx = (idx - 1 + traxList.length) % traxList.length;
+                        setActiveVideo(traxList[prevIdx]);
+                      }
+                    }}
+                  />
                 ) : activeVideo.mediaUrl && getYoutubeId(activeVideo.mediaUrl) ? (
                   <iframe
                     src={`https://www.youtube.com/embed/${getYoutubeId(activeVideo.mediaUrl)}?autoplay=1&mute=0&controls=1&loop=1`}
@@ -535,11 +532,18 @@ export default function KindListPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <StatusPill status={activeVideo.status} />
-                    {activeVideo.durationSec && (
-                      <span className="rounded-full bg-tint px-3 py-1 text-xs font-bold text-accent">
-                        ⏱️ {fmtDur(activeVideo.durationSec)}
-                      </span>
-                    )}
+                    {(() => {
+                      const realSec =
+                        activeVideo.kind === "trax" &&
+                        (!activeVideo.mediaUrl || mediaBlocker("trax", activeVideo.mediaUrl))
+                          ? estimateDurationSec(activeVideo.summary || "")
+                          : activeVideo.durationSec;
+                      return realSec ? (
+                        <span className="rounded-full bg-tint px-3 py-1 text-xs font-bold text-accent">
+                          ⏱️ {fmtDur(realSec)}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
 
                   <h2 className="text-xl font-bold text-ink leading-snug">

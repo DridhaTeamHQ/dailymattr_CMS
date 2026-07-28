@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { UploadCloud, X } from "lucide-react";
+import { UploadCloud, Volume2, X } from "lucide-react";
 import { MEDIA, UploadError, uploadBlob } from "@/lib/storage";
 
 /**
@@ -78,6 +78,16 @@ export default function MediaDrop({
       value.includes("gtv-videos") ||
       value.includes("mixkit"));
 
+  const isAudio =
+    value &&
+    (value.startsWith("data:audio") ||
+      value.endsWith(".mp3") ||
+      value.endsWith(".wav") ||
+      value.endsWith(".m4a") ||
+      value.endsWith(".aac") ||
+      value.endsWith(".ogg") ||
+      value.includes("/api/tts"));
+
   if (value) {
     return (
       <div
@@ -109,10 +119,28 @@ export default function MediaDrop({
             }}
             className="h-full w-full object-cover"
           />
+        ) : isAudio ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-slate-950 p-6 text-white text-center">
+            <div className="flex items-center gap-2 text-accent">
+              <Volume2 size={24} />
+              <span className="text-xs font-bold uppercase tracking-wider text-white/80">
+                Uploaded Audio Track
+              </span>
+            </div>
+            <audio
+              src={value}
+              controls
+              onLoadedMetadata={(e) => {
+                const dur = Math.round(e.currentTarget.duration);
+                if (dur && !isNaN(dur) && isFinite(dur)) {
+                  onDurationChange?.(dur);
+                }
+              }}
+              className="w-full max-w-sm"
+            />
+          </div>
         ) : (
           /* eslint-disable-next-line @next/next/no-img-element */
-          // Not lazy: this is the file the user just picked, so it is the one
-          // thing they are waiting to see.
           <img
             src={value}
             alt="Media preview"

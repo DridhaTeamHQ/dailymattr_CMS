@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Radio, Save, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Mic, Radio, Save, Send, Sparkles, Square, Volume2 } from "lucide-react";
 import MediaDrop from "@/components/MediaDrop";
 import PixComposer from "@/components/PixComposer";
 import { PixBezel } from "@/components/PixPoster";
 import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
+import { SummaryAudioConverter } from "@/components/SummaryAudioConverter";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { isMediaFile, localMediaPath, mediaBlocker, rehostable } from "@/lib/media";
@@ -79,6 +80,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const [item, setItem] = useState<ContentItem | null>(null);
   const [saved, setSaved] = useState<null | "draft" | "review">(null);
   const [placement, setPlacement] = useState<PixPlacement>("list");
+  const [audioMode, setAudioMode] = useState<"script" | "upload">("script");
   const [ytUrl, setYtUrl] = useState("");
   const [scraping, setScraping] = useState(false);
   const [scrapeErr, setScrapeErr] = useState<string | null>(null);
@@ -562,6 +564,15 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                   onChange={(e) => set("summary", e.target.value)}
                   placeholder="Context to impact, no fluff…"
                 />
+                <SummaryAudioConverter
+                  summary={item.summary}
+                  lang={item.language}
+                  currentMediaUrl={item.mediaUrl}
+                  onAttachAudio={(url, durationSec) => {
+                    set("mediaUrl", url);
+                    set("durationSec", durationSec);
+                  }}
+                />
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
@@ -673,7 +684,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             </div>
           )}
 
-          {!isPix && (
+          {!isPix && kind !== "trax" && (
           <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="label">
@@ -696,6 +707,15 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               maxLength={kind === "article" ? ARTICLE_DESC_MAX : undefined}
               onChange={(e) => set("summary", e.target.value)}
               placeholder="Context to impact, no fluff…"
+            />
+            <SummaryAudioConverter
+              summary={item.summary}
+              lang={item.language}
+              currentMediaUrl={item.mediaUrl}
+              onAttachAudio={(url, durationSec) => {
+                set("mediaUrl", url);
+                set("durationSec", durationSec);
+              }}
             />
           </div>
           )}
@@ -798,53 +818,127 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           )}
 
           {kind === "trax" && (
-            <div className="grid gap-5 sm:grid-cols-[1fr_140px]">
-              <div>
-                <div className="label mb-2">Audio URL</div>
-                <input
-                  className="field"
-                  value={item.mediaUrl ?? ""}
-                  disabled={!editable}
-                  onChange={(e) => set("mediaUrl", e.target.value || null)}
-                  placeholder="https://cdn…/episode.mp3"
-                />
-                {/* Trax had no validation and no preview: a URL was typed into
-                    a box and believed. The one published episode points at
-                    cdn.dailymattr.example — `.example` is a reserved TLD that
-                    can never resolve — and nothing anywhere said so. Publishing
-                    is blocked on this now (lib/media), but being told at the
-                    point of typing is worth more than being told at the end. */}
-                {item.mediaUrl?.trim() ? (
-                  mediaBlocker("trax", item.mediaUrl) ? (
-                    <p className="mt-2 text-[11px] font-semibold text-rose">
-                      {mediaBlocker("trax", item.mediaUrl)}
-                    </p>
-                  ) : (
-                    <audio
-                      src={item.mediaUrl}
-                      controls
-                      preload="none"
-                      className="mt-3 w-full"
-                    />
-                  )
-                ) : null}
+            <div className="rounded-2xl border border-line bg-tint/20 p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="label text-xs font-bold text-ink">Audio Mode</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAudioMode("script")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                      audioMode === "script"
+                        ? "bg-accent text-slate-950 shadow-sm"
+                        : "bg-field text-faint hover:text-ink"
+                    }`}
+                  >
+                    ✍️ Script in Summary (TTS)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAudioMode("upload")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                      audioMode === "upload"
+                        ? "bg-accent text-slate-950 shadow-sm"
+                        : "bg-field text-faint hover:text-ink"
+                    }`}
+                  >
+                    📁 Directly Upload Audio
+                  </button>
+                </div>
               </div>
-              <div>
-                <div className="label mb-2">Duration (sec)</div>
-                <input
-                  className="field"
-                  type="number"
-                  min={0}
-                  value={item.durationSec ?? ""}
-                  disabled={!editable}
-                  onChange={(e) =>
-                    set(
-                      "durationSec",
-                      e.target.value ? Number(e.target.value) : null
-                    )
-                  }
-                />
-              </div>
+
+              {audioMode === "script" ? (
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between">
+                    <div className="label">Audio Script</div>
+                    <span className="text-[11px] font-medium text-faint">
+                      Auto-converts to spoken audio
+                    </span>
+                  </div>
+                  <textarea
+                    className="field min-h-32 resize-y leading-relaxed"
+                    value={item.summary}
+                    disabled={!editable}
+                    onChange={(e) => set("summary", e.target.value)}
+                    placeholder="Type your spoken audio script here…"
+                  />
+                  <SummaryAudioConverter
+                    summary={item.summary}
+                    lang={item.language}
+                    currentMediaUrl={item.mediaUrl}
+                    onAttachAudio={(url, durationSec) => {
+                      set("mediaUrl", url);
+                      set("durationSec", durationSec);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div className="label mb-2">Upload Audio File (MP3, WAV, M4A, AAC)</div>
+                    {item.summary?.trim() && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const { generateAudioFromText } = await import("@/lib/tts");
+                            const { audioUrl, durationSec } = await generateAudioFromText(item.summary, item.language);
+                            set("mediaUrl", audioUrl);
+                            set("durationSec", durationSec);
+                          } catch (e: any) {
+                            alert(e.message || "Failed to generate audio from summary.");
+                          }
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] font-bold text-accent hover:underline mb-2"
+                      >
+                        <Sparkles size={13} /> Generate MP3 from Summary
+                      </button>
+                    )}
+                  </div>
+
+                  <MediaDrop
+                    value={item.mediaUrl}
+                    onChange={(url) => set("mediaUrl", url)}
+                    onDurationChange={(dur) => set("durationSec", dur)}
+                    accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
+                    hint="Drop MP3 / WAV / M4A audio file"
+                  />
+
+                  <div className="grid gap-5 sm:grid-cols-[1fr_140px]">
+                    <div>
+                      <div className="label mb-2">Or Paste Audio URL</div>
+                      <input
+                        className="field"
+                        value={item.mediaUrl ?? ""}
+                        disabled={!editable}
+                        onChange={(e) => set("mediaUrl", e.target.value || null)}
+                        placeholder="https://cdn…/episode.mp3"
+                      />
+                      {item.mediaUrl?.trim() && mediaBlocker("trax", item.mediaUrl) && (
+                        <p className="mt-2 text-[11px] font-semibold text-rose">
+                          {mediaBlocker("trax", item.mediaUrl)}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <div className="label mb-2">Duration (sec)</div>
+                      <input
+                        className="field"
+                        type="number"
+                        min={0}
+                        value={item.durationSec ?? ""}
+                        disabled={!editable}
+                        onChange={(e) =>
+                          set(
+                            "durationSec",
+                            e.target.value ? Number(e.target.value) : null
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

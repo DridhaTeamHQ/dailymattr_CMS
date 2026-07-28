@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { AudioLines, Eye, Pencil, Play } from "lucide-react";
 import { StatusPill } from "@/components/ui";
 import type { ContentItem } from "@/lib/types";
+import { mediaBlocker } from "@/lib/media";
+import { estimateDurationSec } from "@/lib/tts";
 
 const fmtDur = (s: number | null) => {
   if (!s) return null;
@@ -14,7 +17,8 @@ const fmtDur = (s: number | null) => {
 };
 
 /**
- * The Trax audio card frame matching the 9:16 vertical poster UI of Qix.
+ * Music Player style 1:1 square album artwork frame with bottom-right play circle badge.
+ * Inspired by mobile music app UI kits.
  */
 export function TraxFrame({
   item,
@@ -23,8 +27,6 @@ export function TraxFrame({
   item: ContentItem;
   onClick?: () => void;
 }) {
-  const duration = fmtDur(item.durationSec);
-
   return (
     <div
       role={onClick ? "button" : undefined}
@@ -37,9 +39,9 @@ export function TraxFrame({
         }
       }}
       aria-label={onClick ? `Listen to ${item.title}` : undefined}
-      className={`group relative aspect-[9/16] w-full overflow-hidden rounded-[26px] bg-ink shadow-(--shadow-soft) ${
+      className={`group relative aspect-square w-full overflow-hidden rounded-2xl bg-ink shadow-md ${
         onClick
-          ? "cursor-pointer transition-transform duration-200 hover:-translate-y-1 hover:shadow-(--shadow-lift)"
+          ? "cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
           : ""
       }`}
     >
@@ -54,38 +56,30 @@ export function TraxFrame({
         />
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white/45 p-4 text-center">
-          <AudioLines size={32} className="text-accent" />
-          <span className="text-[11px] font-semibold text-white/70">
+          <AudioLines size={36} className="text-accent" />
+          <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
             Audio Explainer
           </span>
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-black/30" />
+      {/* Subtle bottom gradient */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
 
-      {/* Top Left Badge */}
-      <span className="absolute top-3 left-3 flex items-center gap-1 rounded-full border border-white/10 bg-black/50 px-2 py-0.5 text-[9px] font-bold text-white/90 backdrop-blur-md">
+      {/* Top Left Listen Badge */}
+      <span className="absolute top-2.5 left-2.5 flex items-center gap-1 rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[9px] font-bold text-white/90 backdrop-blur-md">
         <AudioLines size={10} className="text-accent" /> LISTEN
       </span>
 
-
-
-      {/* Audio Waveform Hover Button */}
-      <span className="absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
-        <AudioLines size={18} className="text-white" />
-      </span>
-
-      {/* Title Overlay at bottom */}
-      <div className="absolute inset-x-0 bottom-0 p-3.5">
-        <p className="line-clamp-3 text-[13px] leading-[1.25] font-extrabold tracking-tight text-white">
-          {item.title || "Untitled Trax"}
-        </p>
+      {/* Bottom Right Floating Play Circle Badge */}
+      <div className="absolute right-2.5 bottom-2.5 flex h-9 w-9 items-center justify-center rounded-full bg-[#d8f231] text-black shadow-lg transition-transform duration-200 group-hover:scale-110">
+        <Play size={15} className="ml-0.5 fill-black" />
       </div>
     </div>
   );
 }
 
-/** Trax tile for the grid — styled exactly like QixCard. */
+/** Trax tile for the grid — styled in Music Player UI format with expandable title & summary. */
 export function TraxCard({
   item,
   author,
@@ -97,23 +91,55 @@ export function TraxCard({
   onView: () => void;
   actions?: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const realDurationSec =
+    !item.mediaUrl || mediaBlocker("trax", item.mediaUrl)
+      ? estimateDurationSec(item.summary || "")
+      : item.durationSec;
+  const duration = fmtDur(realDurationSec);
+
   return (
-    <div className="mx-auto flex w-full max-w-[210px] flex-col gap-2">
+    <div className="mx-auto flex w-full max-w-[185px] flex-col gap-2">
+      {/* 1:1 Square Album Cover */}
       <TraxFrame item={item} onClick={onView} />
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* Title & Subtitle */}
+      <div className="mt-0.5 space-y-1">
+        <h3
+          onClick={() => setExpanded(!expanded)}
+          className={`cursor-pointer text-[13px] font-extrabold leading-snug text-ink hover:text-accent transition-all ${
+            expanded ? "" : "line-clamp-2"
+          }`}
+          title={expanded ? "Click to collapse" : "Click to view full title"}
+        >
+          {item.title || "Untitled Trax"}
+        </h3>
+
+        <p
+          onClick={() => setExpanded(!expanded)}
+          className={`cursor-pointer text-[11px] font-medium text-muted leading-relaxed transition-all ${
+            expanded ? "" : "line-clamp-2"
+          }`}
+          title={expanded ? "Click to collapse" : "Click to view full summary"}
+        >
+          {item.summary || (duration ? `${duration} · Audio` : "Audio explainer")}
+        </p>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
         {actions ?? (
           <>
             <Link
               href={`/content/trax/editor?id=${item.id}`}
-              className="btn-primary flex flex-1 items-center justify-center gap-1 px-2 py-1.5 text-[11px]"
+              className="btn-primary flex flex-1 items-center justify-center gap-1 px-2 py-1 text-[11px]"
             >
               <Pencil size={11} /> Edit
             </Link>
             <button
               type="button"
               onClick={onView}
-              className="btn-ghost flex flex-1 items-center justify-center gap-1 px-2 py-1.5 text-[11px]"
+              className="btn-ghost flex flex-1 items-center justify-center gap-1 px-2 py-1 text-[11px]"
             >
               <Eye size={11} /> View
             </button>
@@ -121,13 +147,13 @@ export function TraxCard({
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-1.5">
+      {/* Status Pill & Author */}
+      <div className="flex items-center justify-between gap-1 text-[10px]">
         <StatusPill status={item.status} />
+        <span className="truncate text-faint max-w-[85px]" title={author}>
+          {author ?? "—"}
+        </span>
       </div>
-      <p className="truncate text-center text-[10px] text-faint">
-        {author ?? "—"}
-        {item.state ? ` · ${item.state}` : ""}
-      </p>
     </div>
   );
 }
