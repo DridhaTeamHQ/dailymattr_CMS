@@ -13,6 +13,13 @@
  * images, AI enhance) — none of it affects the exported PNG.
  */
 
+import {
+  PIX_BRAND,
+  PIX_CHROME,
+  PIX_GEOMETRY,
+  PIX_SCREEN,
+  PIX_TYPE,
+} from "./pix";
 import { markHeadline } from "./pixHighlight";
 
 /** Extra scale so a panned image never exposes an edge. */
@@ -139,6 +146,8 @@ export type PixComposerState = {
   headline: string;
   /** Body copy for the Text preview. Scraping fills it; the writer can edit. */
   detailText: string;
+  /** Source credit under the accent bar, e.g. "bbc.com". Blank shows DailyMattr alone. */
+  publisher: string;
   /** 0 = auto (fixed 48px), otherwise the chosen size. */
   fontSize: number;
   overlayOpacity: number;
@@ -170,6 +179,7 @@ export const defaultComposerState = (): PixComposerState => ({
   accent: "#7AA5FF",
   headline: "",
   detailText: "",
+  publisher: "",
   fontSize: 0,
   overlayOpacity: 100,
   imageOffset: { x: 0, y: 0 },
@@ -315,7 +325,12 @@ export function computeHeadlineLayoutAndTop(
   const fontSize = m ? parseFloat(m[1]) : 49;
 
   const blockHeight = (layout.lines.length - 1) * layout.lineHeight + fontSize;
-  const top = Math.max(0, canvasHeight - L.headline.bottomPadding - blockHeight);
+  // The accent rule and the credit live in the gap under the headline. The
+  // presets were drawn before either existed, and 4:5, 1:1 and 16:9 leave less
+  // room than they need — so the padding is the larger of the preset's and what
+  // the chrome actually occupies. 9:16 already has room and does not move.
+  const padding = Math.max(L.headline.bottomPadding, chromeReserve(s));
+  const top = Math.max(0, canvasHeight - padding - blockHeight);
   return { layout, top, fontSize, blockHeight };
 }
 
@@ -532,6 +547,110 @@ function drawHeadline(
 
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
+}
+
+/* ── Accent bar and publisher credit ─────────────────────────────────── */
+
+/**
+ * The credit line's face. Inter per the spec, resolved from the CSS variable at
+ * mount the same way the headline family is; the literal is the fallback.
+ */
+let publisherFamily = "'Inter', 'Segoe UI', Arial, sans-serif";
+
+export const getPublisherFamily = () => publisherFamily;
+
+export function setPublisherFamily(family: string) {
+  if (family.trim()) publisherFamily = family.trim();
+}
+
+/**
+ * Spec points to canvas pixels, measured against the copy column.
+ *
+ * The spec is drawn on a 375pt screen whose copy column is 335pt wide, and the
+ * bar sits under that column rather than under the canvas. Scaling on the
+ * column keeps the rule the same fraction of the text it underlines in every
+ * ratio — scaling on canvas size instead shrinks it to a dash on 16:9, which is
+ * 1920 wide but only carries a 1200pt column.
+ */
+const SPEC_COPY_WIDTH = PIX_SCREEN - PIX_GEOMETRY.list.copyInset * 2;
+
+const specScale = (s: PixComposerState) =>
+  getLayout(s).headline.maxWidth / SPEC_COPY_WIDTH;
+
+/**
+ * Vertical space the accent rule and credit need under the headline:
+ * gap, rule, gap, credit type, then the bottom margin.
+ */
+function chromeReserve(s: PixComposerState) {
+  const bar = PIX_CHROME.accentBar;
+  return (
+    (bar.gap +
+      bar.h +
+      bar.gap +
+      PIX_TYPE.publisher.size +
+      PIX_GEOMETRY.page.publisherBottom) *
+    specScale(s)
+  );
+}
+
+/** Baseline of the credit line, and the top of the type above it. */
+function publisherMetrics(s: PixComposerState, H: number) {
+  const k = specScale(s);
+  const size = PIX_TYPE.publisher.size * k;
+  const baseline = H - PIX_GEOMETRY.page.publisherBottom * k;
+  return { k, size, baseline, top: baseline - size };
+}
+
+/** The brand rule under the headline — 34x3 at spec size, radius 2. */
+function drawAccentBar(
+  ctx: CanvasRenderingContext2D,
+  s: PixComposerState,
+  headlineBottom: number,
+  H: number
+) {
+  const bar = PIX_CHROME.accentBar;
+  const { k, top: creditTop } = publisherMetrics(s, H);
+  const x = getLayout(s).headline.x;
+  const height = bar.h * k;
+
+  // 1:1 and 16:9 leave only ~90px under the headline, not enough for the spec
+  // gap and the credit both. Pull the rule up so it always clears the credit
+  // rather than being drawn underneath it and lost in its shadow.
+  const y = Math.min(headlineBottom + bar.gap * k, creditTop - bar.gap * k - height);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, bar.w * k, height, bar.radius * k);
+  ctx.fillStyle = PIX_BRAND;
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * "DailyMattr · bbc.com" along the bottom edge. Every Pix carries where it came
+ * from, so this draws even when no source has been set yet.
+ */
+function drawPublisher(
+  ctx: CanvasRenderingContext2D,
+  s: PixComposerState,
+  H: number
+) {
+  const { k, size, baseline } = publisherMetrics(s, H);
+  const credit = s.publisher.trim()
+    ? `DailyMattr · ${s.publisher.trim()}`
+    : "DailyMattr";
+
+  ctx.save();
+  ctx.font = `600 ${size}px ${publisherFamily}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+  // A photograph can run pale behind the credit, so keep it legible — but a
+  // wide blur bleeds onto the accent rule just above it on the tight ratios.
+  ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+  ctx.shadowBlur = 6 * k;
+  ctx.fillText(credit, getLayout(s).headline.x, baseline);
+  ctx.restore();
 }
 
 /* ── Text screen (the reader's second slide) ─────────────────────────── */
@@ -840,13 +959,15 @@ export function renderPoster(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
-  const { layout, top } = computeHeadlineLayoutAndTop(ctx, s, H);
+  const { layout, top, blockHeight } = computeHeadlineLayoutAndTop(ctx, s, H);
 
   drawBackground(ctx, W, H);
   drawHero(ctx, s, assets.image, W, H, top);
   drawLogo(ctx, s, assets.logo);
   drawTag(ctx, s, assets.tag, top);
   drawHeadline(ctx, s, layout, top);
+  drawAccentBar(ctx, s, top + blockHeight, H);
+  drawPublisher(ctx, s, H);
 
   ctx.restore();
 }

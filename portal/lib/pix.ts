@@ -103,6 +103,25 @@ export const PIX_CHARS_PER_LINE = { headlineList: 24, headlinePage: 28, point: 4
 export const PIX_TITLE_MAX = PIX_CHARS_PER_LINE.headlineList * PIX_LINES.headline; // 96
 export const PIX_POINT_MAX = PIX_CHARS_PER_LINE.point * PIX_LINES.point; // 220
 
+/**
+ * The Text screen paragraph. It has no hard ceiling — the canvas steps the type
+ * down through six scales and then clips — so this is the point past which the
+ * type is no longer at full size, not a limit the renderer enforces.
+ */
+export const PIX_TEXT_SLIDE_MAX = 400;
+
+/**
+ * What the shipped Pix actually read like, as opposed to what the ceilings
+ * above permit. Every sample headline lands in 62-69 characters and every key
+ * point in 66-79 — roughly one and a half lines each, one fact apiece. Writers
+ * (and the AI) aim here; the MAX values are only the truncation backstop.
+ */
+export const PIX_HOUSE_STYLE = {
+  headlineChars: 65,
+  pointChars: 72,
+  textSlideChars: 300,
+} as const;
+
 /** Estimated lines a string occupies in a given column. */
 export const pixLines = (text: string, perLine: number) =>
   Math.max(1, Math.ceil(text.trim().length / perLine));

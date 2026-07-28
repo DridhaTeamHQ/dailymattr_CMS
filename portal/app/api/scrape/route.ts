@@ -1,4 +1,8 @@
+import { ScrapeError, extractArticle } from "@/lib/article-scrape";
+import { summariseArticle } from "@/lib/openai";
+import { acquireSlot, clientIp, rateLimit, releaseSlot } from "@/lib/rate-limit";
 import { errorResponse, safeFetch } from "@/lib/safeFetch";
+import { ARTICLE_DESC_MAX, ARTICLE_TITLE_MAX } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +20,22 @@ export interface ScrapeResult {
   section: string | null;
   keywords: string[];
   publishedAt: string | null;
+  /** Editor character caps, so the UI never has to hardcode them. */
+  limits: { title: number; description: number };
 }
+
+/** Below this there is no story to summarise — a stub or a paywall teaser. */
+const MIN_ARTICLE_CHARS = 400;
+
+/**
+ * Per-caller and global quotas. The global cap is the real budget guard — it
+ * bounds what a single leaked session can spend on the OpenAI key.
+ */
+const RULES = (ip: string) => [
+  { key: `scrape:ip:${ip}:min`, limit: 5, windowMs: 60_000 },
+  { key: `scrape:ip:${ip}:hr`, limit: 40, windowMs: 3_600_000 },
+  { key: "scrape:global:hr", limit: 200, windowMs: 3_600_000 },
+];
 
 // ── HTML helpers ───────────────────────────────────────────────────
 const decode = (s: string) =>
@@ -103,21 +122,31 @@ function sectionFromPath(url: URL): string | null {
   return null;
 }
 
-/** Trims to ~`max` words on a sentence boundary where possible. */
-function toWords(text: string, max = 60): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= max) return text.trim();
-  const clipped = words.slice(0, max).join(" ");
-  const lastStop = Math.max(
-    clipped.lastIndexOf(". "),
-    clipped.lastIndexOf("! "),
-    clipped.lastIndexOf("? ")
-  );
-  if (lastStop > clipped.length * 0.55) return clipped.slice(0, lastStop + 1);
-  return clipped.replace(/[,;:\s]+$/, "") + "…";
+export async function POST(request: Request) {
+  const ip = clientIp(request);
+  const slotKey = `scrape:${ip}`;
+
+  const limited = rateLimit(RULES(ip));
+  if (!limited.ok) {
+    return Response.json(
+      { error: `Too many imports. Try again in ${limited.retryAfter}s.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } }
+    );
+  }
+  if (!acquireSlot(slotKey)) {
+    return Response.json(
+      { error: "An import is already running. Wait for it to finish." },
+      { status: 429 }
+    );
+  }
+  try {
+    return await handle(request);
+  } finally {
+    releaseSlot(slotKey);
+  }
 }
 
-export async function POST(request: Request) {
+async function handle(request: Request) {
   let raw: string;
   try {
     const body = (await request.json()) as { url?: string };
@@ -162,16 +191,7 @@ export async function POST(request: Request) {
     })()
   );
 
-  const description = first(
-    meta(html, "og:description"),
-    meta(html, "twitter:description"),
-    meta(html, "description")
-  );
   const fullText = extractText(html);
-  const summarySource = first(
-    fullText && fullText.split(/\s+/).length > 25 ? fullText : null,
-    description
-  );
 
   let image = first(
     meta(html, "og:image:secure_url"),
@@ -187,7 +207,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const keywords = (
+  const metaKeywords = (
     first(meta(html, "article:tag"), meta(html, "news_keywords"), meta(html, "keywords")) ?? ""
   )
     .split(",")
@@ -195,11 +215,49 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .slice(0, 5);
 
+  // The <p>-only reader above misses body copy on publishers that build their
+  // articles out of divs, and keeps the link farms that sit under the story.
+  // The link-density extractor handles both, so the model reads from it.
+  const prose = extractArticle(html, url.toString()).text;
+  const source = prose.length > (fullText?.length ?? 0) ? prose : (fullText ?? "");
+
+  if (source.length < MIN_ARTICLE_CHARS) {
+    return Response.json(
+      {
+        error:
+          "Couldn't read enough article text from that page — it may be paywalled or JavaScript-only.",
+      },
+      { status: 422 }
+    );
+  }
+
+  let summary;
+  try {
+    summary = await summariseArticle({
+      text: source,
+      sourceTitle: title,
+      sourceUrl: url.toString(),
+    });
+  } catch (e) {
+    if (e instanceof ScrapeError) {
+      return Response.json({ error: e.message }, { status: e.status });
+    }
+    console.error("[scrape] unexpected", e);
+    return Response.json(
+      { error: "Something went wrong while importing that article." },
+      { status: 500 }
+    );
+  }
+
+  console.info(
+    `[scrape] ${url.hostname} · ${summary.tokens.prompt}+${summary.tokens.completion} tokens`
+  );
+
   const result: ScrapeResult = {
     url: url.toString(),
-    title: title ? toWords(title, 20) : null,
-    summary: summarySource ? toWords(summarySource, 60) : null,
-    fullText,
+    title: summary.title,
+    summary: summary.description,
+    fullText: source,
     image,
     siteName: first(meta(html, "og:site_name"), meta(html, "application-name")),
     section: first(
@@ -208,19 +266,15 @@ export async function POST(request: Request) {
       meta(html, "genre"),
       sectionFromPath(url)
     ),
-    keywords,
+    // Meta keywords are often SEO spam; the model's topical tags read cleaner.
+    keywords: summary.tags.length ? summary.tags : metaKeywords,
     publishedAt: first(
       meta(html, "article:published_time"),
       meta(html, "datePublished"),
       meta(html, "publishdate")
     ),
+    limits: { title: ARTICLE_TITLE_MAX, description: ARTICLE_DESC_MAX },
   };
-
-  if (!result.title && !result.summary)
-    return Response.json(
-      { error: "Couldn't read an article from that page — paste the text manually." },
-      { status: 422 }
-    );
 
   return Response.json(result);
 }

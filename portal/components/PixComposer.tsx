@@ -43,8 +43,10 @@ import {
   renderPoster,
   renderTextScreen,
   scaleForLongEdge,
+  getPublisherFamily,
   setHeadlineFamily,
   setPreviewTextFamily,
+  setPublisherFamily,
   type PixAssets,
   type PixComposerState,
   type PixFilter,
@@ -194,8 +196,10 @@ export default function PixComposer({
   // Derived rather than synced: an effect mirroring one prop into state just
   // buys an extra render and a stale-value window.
   const state: PixComposerState = useMemo(
-    () => ({ ...draft, headline }),
-    [draft, headline]
+    // The credit is the item's source, not composer state — it belongs to the
+    // Pix, so it flows in here rather than being typed twice.
+    () => ({ ...draft, headline, publisher: source?.title ?? "" }),
+    [draft, headline, source?.title]
   );
   /**
    * The photograph being composed with. Seeded from the item's cover, but it
@@ -250,6 +254,10 @@ export default function PixComposer({
       .getPropertyValue("--font-poppins")
       .trim();
     if (body) setPreviewTextFamily(body);
+    const credit = getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-inter")
+      .trim();
+    if (credit) setPublisherFamily(credit);
 
     const family = getHeadlineFamily();
     const textFamily = getPreviewTextFamily();
@@ -257,6 +265,8 @@ export default function PixComposer({
       document.fonts.load(`800 48px ${family}`),
       document.fonts.load(`800 64px ${family}`),
       document.fonts.load(`700 39px ${textFamily}`),
+      // The credit draws at ~31px on a 9:16 poster; load it before first paint.
+      document.fonts.load(`600 31px ${getPublisherFamily()}`),
     ])
       .then(done)
       .catch(done);
@@ -465,23 +475,32 @@ export default function PixComposer({
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Scrape failed.");
 
-      if (data.title) onHeadline(data.title.slice(0, PIX_TITLE_MAX));
+      // The model writes the card copy; the publisher's own headline is the
+      // fallback when writing was skipped or failed.
+      const written: string[] | null = Array.isArray(data.points)
+        ? data.points
+        : null;
+
+      const chosenHeadline = data.headline || data.title;
+      if (chosenHeadline) onHeadline(chosenHeadline.slice(0, PIX_TITLE_MAX));
       // Every Pix carries where it came from.
       onSource({ title: new URL(url).hostname.replace(/^www\./, ""), url });
 
-      // The three key points come straight out of the article body, split the
+      // Without AI copy, fall back to the article's own sentences, split the
       // way the app does it — sentences of at least 25 characters.
-      const scrapedPoints = pixPointsFromSummary(
-        data.articleText || data.detailText || ""
-      );
+      const scrapedPoints =
+        written ??
+        pixPointsFromSummary(data.articleText || data.detailText || "");
+
       if (scrapedPoints.length) {
         const filled = Array.from(
           { length: PIX_POINT_COUNT },
           (_, i) => (scrapedPoints[i] ?? "").slice(0, PIX_POINT_MAX)
         );
         onPoints(filled);
-        // Slide two is a list, not prose — seed the Text screen as bullets.
-        setDraftKey("detailText", asBullets(filled));
+        // The Text screen takes the model's paragraph when there is one, and
+        // otherwise mirrors the points as bullets the way it always has.
+        setDraftKey("detailText", data.textSlide || asBullets(filled));
       }
 
       if (data.imageProxy) {
@@ -494,10 +513,16 @@ export default function PixComposer({
         });
         setImgError(null);
         onCommit(dataUrl);
-        setScrapeMsg(`Built from ${new URL(url).hostname}`);
+        setScrapeMsg(
+          written
+            ? `Written from ${new URL(url).hostname} — check every fact before submitting.`
+            : `Built from ${new URL(url).hostname}`
+        );
       } else {
         setScrapeMsg("Headline scraped — no image on that page, add one below.");
       }
+      // Writing is additive: say so when it was skipped, but keep the scrape.
+      if (data.aiError) setScrapeErr(data.aiError);
     } catch (error) {
       setScrapeErr(
         error instanceof Error ? error.message : "Could not scrape that URL."

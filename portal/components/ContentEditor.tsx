@@ -27,6 +27,8 @@ import {
 } from "@/lib/pix";
 import { markReport } from "@/lib/pixHighlight";
 import {
+  ARTICLE_DESC_MAX,
+  ARTICLE_TITLE_MAX,
   KIND_META,
   type Category,
   type ContentItem,
@@ -103,13 +105,20 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
         if (data.videoUrl) set("mediaUrl", data.videoUrl);
         if (data.coverUrl) set("coverUrl", data.coverUrl);
         if (data.durationSec) set("durationSec", data.durationSec);
-        if (data.title) {
-          set("title", data.title);
-        }
+        // Don't clobber a headline the writer has already typed.
+        if (data.title && !item?.title) set("title", data.title);
         // Report what actually happened. This used to read data.isFallback,
         // which the route never sends, so it always claimed a full success —
         // including when no video had been fetched at all.
-        if (data.isDownloaded) setScrapeMsg("Video imported.");
+        if (data.isDownloaded) {
+          const mb = data.sizeBytes
+            ? (data.sizeBytes / 1_048_576).toFixed(1)
+            : null;
+          const shape = data.isVertical === false ? " — landscape, not 9:16" : "";
+          setScrapeMsg(
+            `Imported${data.uploader ? ` from ${data.uploader}` : ""}${mb ? ` · ${mb} MB` : ""}${shape}`
+          );
+        }
         else
           setScrapeErr(
             data.notice ?? "Only the title and thumbnail could be imported."
@@ -167,7 +176,11 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const set = <K extends keyof ContentItem>(k: K, v: ContentItem[K]) =>
     setItem((it) => (it ? { ...it, [k]: v } : it));
 
-  const wordCount = item.summary.trim() ? item.summary.trim().split(/\s+/).length : 0;
+  const titleChars = item.title.length;
+  const descChars = item.summary.length;
+  const overLimit =
+    kind === "article" &&
+    (titleChars > ARTICLE_TITLE_MAX || descChars > ARTICLE_DESC_MAX);
 
   const isPix = kind === "pix";
   const points = getPixPoints(item);
@@ -529,11 +542,23 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               the poster they land on — see the Poster block below. */}
           {!isPix && (
             <div>
-              <div className="label mb-2">Title</div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="label">Title</div>
+                {kind === "article" && (
+                  <span
+                    className={`text-[11px] font-bold ${
+                      titleChars > ARTICLE_TITLE_MAX ? "text-rose" : "text-faint"
+                    }`}
+                  >
+                    {titleChars}/{ARTICLE_TITLE_MAX}
+                  </span>
+                )}
+              </div>
               <input
                 className="field text-[15px] font-semibold"
                 value={item.title}
                 disabled={!editable}
+                maxLength={kind === "article" ? ARTICLE_TITLE_MAX : undefined}
                 onChange={(e) => set("title", e.target.value)}
                 placeholder={`A sharp ${meta.label.replace(/s$/, "").toLowerCase()} title…`}
               />
@@ -544,15 +569,15 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           <div>
             <div className="mb-2 flex items-center justify-between">
               <div className="label">
-                {kind === "article" ? "60-word story" : "Summary"}
+                {kind === "article" ? "Description" : "Summary"}
               </div>
               {kind === "article" && (
                 <span
                   className={`text-[11px] font-bold ${
-                    wordCount > 60 ? "text-rose" : "text-faint"
+                    descChars > ARTICLE_DESC_MAX ? "text-rose" : "text-faint"
                   }`}
                 >
-                  {wordCount}/60 words
+                  {descChars}/{ARTICLE_DESC_MAX}
                 </span>
           )}
             </div>
@@ -560,6 +585,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               className="field min-h-28 resize-y leading-relaxed"
               value={item.summary}
               disabled={!editable}
+              maxLength={kind === "article" ? ARTICLE_DESC_MAX : undefined}
               onChange={(e) => set("summary", e.target.value)}
               placeholder="Context to impact, no fluff…"
             />
@@ -817,11 +843,13 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                   : "Draft saved ✓"
                 : saved === "review"
                   ? "Sent to QA ✓"
-                  : item.status === "rejected"
-                    ? "Revise and resubmit"
-                    : saving
-                      ? "Saving…"
-                      : ""}
+                  : overLimit
+                    ? "Trim to the character limits to save"
+                    : item.status === "rejected"
+                      ? "Revise and resubmit"
+                      : saving
+                        ? "Saving…"
+                        : ""}
             </span>
           )}
 
@@ -830,8 +858,12 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                never what "edit" means here — so it saves in place instead. */
             <button
               onClick={() => persist(false)}
-              disabled={!item.title || saving}
-              title="Update the live story"
+              disabled={!item.title || saving || overLimit}
+              title={
+                overLimit
+                  ? "Trim to the character limits first"
+                  : "Update the live story"
+              }
               className="btn-accent flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] whitespace-nowrap disabled:opacity-40"
             >
               <Save size={12} /> Update live
@@ -851,6 +883,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 disabled={
                   !item.title ||
                   saving ||
+                  overLimit ||
                   (isPix ? filledPoints < PIX_POINT_COUNT : !item.summary)
                 }
                 title={

@@ -1,5 +1,27 @@
 export type Role = "super_admin" | "chief_editor" | "writer" | "qa";
 
+/**
+ * Character caps for article cards. Shared by the editor UI and the AI
+ * summariser so both sides agree on what fits.
+ *
+ * These are not round numbers picked for tidiness — they are what the app's
+ * reader card holds. The summary sets at 16.5/26 and is clamped to a line
+ * count, so the real limit is `lines × characters per line` on the narrowest
+ * phone still supported (320dp, ~30 characters per line after word-wrap
+ * raggedness):
+ *
+ *   11 lines — a story with no reading modes, i.e. everything written here → 330
+ *   10 lines — a pipeline story whose mode tabs take a line of the card → 300
+ *
+ * 330 is therefore exact rather than generous: it is the full height of the
+ * card for CMS-authored articles. The one place it can still clip is a
+ * `summary_override` written onto a pipeline story that carries reading modes,
+ * on a 320dp screen — the last ~30 characters ellipsis rather than the layout
+ * breaking. Anything above 330 truncates for real.
+ */
+export const ARTICLE_TITLE_MAX = 70;
+export const ARTICLE_DESC_MAX = 330;
+
 export type ContentKind = "article" | "pix" | "qix" | "trax";
 
 export type ContentStatus =

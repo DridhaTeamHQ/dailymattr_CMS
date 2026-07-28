@@ -76,10 +76,16 @@ export default function SourceImport({
           <Wand2 size={16} />
         </span>
         <div>
-          <h3 className="text-sm font-bold">Start from a source link</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold">Start from a source link</h3>
+            <span className="rounded-full bg-tint px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
+              gpt-4o-mini
+            </span>
+          </div>
           <p className="mt-0.5 text-xs leading-relaxed text-muted">
-            Paste a news URL — Studio pulls the headline, story and image so you
-            can edit instead of writing from scratch. Optional.
+            Paste a news URL — Studio reads the page and writes a headline and
+            description that fit the card, plus the image, section and tags.
+            Always fact-check before submitting. Optional.
           </p>
         </div>
       </div>
