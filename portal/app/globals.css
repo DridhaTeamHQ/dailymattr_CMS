@@ -15,6 +15,12 @@
   --color-faint: #7d7d88;
   --color-accent: #3979ff;
   --color-accent-deep: #2255d4;
+  /* Accent as a solid fill under white text. It cannot follow the theme the
+     way `accent` does: dark mode lightens accent so it reads *on* dark
+     surfaces, which drops white text sitting *on it* to 3:1. Fixed in both
+     themes so buttons stay legible. */
+  --color-accent-solid: #2559d6;
+  --color-accent-solid-hover: #1c49b8;
   --color-tint: rgba(57, 121, 255, 0.1);
   --color-mint: #16a34a;
   --color-mint-tint: rgba(34, 197, 94, 0.12);
@@ -186,7 +192,7 @@ textarea:focus {
   font-weight: 600;
 }
 .btn-primary:hover {
-  background: var(--color-accent);
+  background: var(--color-accent-solid);
   box-shadow: 0 8px 24px rgba(57, 121, 255, 0.35);
 }
 .btn-primary:active {
@@ -194,13 +200,13 @@ textarea:focus {
 }
 
 .btn-accent {
-  background: var(--color-accent);
+  background: var(--color-accent-solid);
   color: #fff;
   border-radius: 999px;
   font-weight: 600;
 }
 .btn-accent:hover {
-  background: var(--color-accent-deep);
+  background: var(--color-accent-solid-hover);
   box-shadow: 0 8px 24px rgba(57, 121, 255, 0.35);
 }
 .btn-accent:active {

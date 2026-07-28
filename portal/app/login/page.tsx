@@ -164,7 +164,10 @@ export default function LoginPage() {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={googleBusy || busy}
-              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-line bg-white py-3 text-sm font-semibold text-ink shadow-sm transition-all hover:bg-slate-50 hover:border-faint disabled:opacity-60"
+              /* Google's brand guidance fixes this button as white with dark
+                 text, so both are pinned. Using the theme's ink here made the
+                 label white-on-white in dark mode — invisible. */
+              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-line bg-white py-3 text-sm font-semibold text-[#1f1f1f] shadow-sm transition-all hover:bg-[#f1f3f4] hover:border-faint disabled:opacity-60"
             >
               {googleBusy ? (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
