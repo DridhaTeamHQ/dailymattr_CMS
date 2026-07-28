@@ -160,20 +160,27 @@ export default function DashboardPage() {
               entries left the card half empty. flex-1 + min-h-0 lets the list
               take whatever height the row ends up being, and scroll only when
               there is genuinely more than fits. */}
-          <div className="-mr-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-2">
+          <div className="-mr-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-2">
             {data.audit.map((a) => (
               <div
                 key={a.id}
-                className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-canvas"
+                className="flex items-start gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-canvas"
               >
-                <Avatar name={a.actorName} hue={220 + (a.actorName.length * 37) % 140} size={32} />
-                <div className="min-w-0">
-                  <p className="text-[13px] leading-snug">
+                <Avatar
+                  name={a.actorName}
+                  hue={220 + ((a.actorName.length * 37) % 140)}
+                  size={24}
+                />
+                <div className="min-w-0 flex-1">
+                  {/* Clamped to two lines. An unclamped headline wrapped to
+                      three or four and cost the space of a whole extra entry,
+                      so one verbose title crowded out the rest of the feed. */}
+                  <p className="line-clamp-2 text-[12px] leading-[1.3]">
                     <span className="font-bold">{a.actorName}</span>{" "}
                     <span className="text-muted">{a.action}</span>{" "}
                     <span className="font-semibold">{a.entityTitle}</span>
                   </p>
-                  <p className="mt-0.5 text-[11px] text-faint">
+                  <p className="text-[10px] text-faint">
                     {a.entity} · {timeAgo(a.createdAt)}
                   </p>
                 </div>
