@@ -36,19 +36,16 @@ export default function LoginPage() {
     setError(null);
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    // small delay so the press animation reads as intentional
-    setTimeout(() => {
-      const res = login(email, password, role);
-      if (res.ok) router.replace("/dashboard");
-      else {
-        setError(res.error);
-        setBusy(false);
-      }
-    }, 420);
+    const res = await login(email, password, role);
+    if (res.ok) router.replace("/dashboard");
+    else {
+      setError(res.error);
+      setBusy(false);
+    }
   };
 
   return (

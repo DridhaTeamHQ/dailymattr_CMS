@@ -13,26 +13,38 @@ import FormatChart from "@/components/FormatChart";
 import { Avatar, FactBadge, Pill, SectionHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import {
-  getAudit,
-  getContent,
-  getNewsStudio,
-  getSelections,
-  timeAgo,
-} from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+  getNewsStudioByIds,
+  listAudit,
+  listContent,
+  listSelections,
+} from "@/lib/db";
+import { timeAgo } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 import { type ContentKind } from "@/lib/types";
 
 const KINDS: ContentKind[] = ["article", "pix", "qix", "trax"];
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const data = useStore(() => ({
-    content: getContent(),
-    audit: getAudit(),
-    selections: getSelections(),
-    newsstudio: getNewsStudio(),
-  }));
+  const { data, error } = useQuery(async () => {
+    const [content, audit, selections] = await Promise.all([
+      listContent(),
+      listAudit(40),
+      listSelections(),
+    ]);
+    // Only the approved ids need fetching from the pipeline database.
+    const newsstudio = await getNewsStudioByIds(
+      selections.map((s) => s.articleId)
+    );
+    return { content, audit, selections, newsstudio };
+  });
 
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load the dashboard: {error}
+      </div>
+    );
   if (!user || !data) return null;
 
   const published = data.content.filter((c) => c.status === "published").length;

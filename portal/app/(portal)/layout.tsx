@@ -13,6 +13,7 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   const { user, ready } = useAuth();
+
   const router = useRouter();
   const pathname = usePathname();
 

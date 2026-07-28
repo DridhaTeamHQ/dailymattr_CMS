@@ -26,14 +26,13 @@ import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import {
-  contentByKind,
   deleteContent,
-  formatDateTime,
-  getUsers,
-  setStatus,
-  timeAgo,
-} from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+  listContentByKind,
+  listUsers,
+  setContentStatus,
+} from "@/lib/db";
+import { formatDateTime, timeAgo } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 import {
   KIND_META,
   type ContentItem,
@@ -97,10 +96,23 @@ export default function KindListPage() {
     };
   }, [activeVideo]);
 
-  const items = useStore(() => (kind ? contentByKind(kind) : []), [kind, tick]);
-  const users = useStore(() => getUsers());
+  const { data, error, refetch } = useQuery(async () => {
+    if (!kind) return { items: [], users: [] };
+    const [items, users] = await Promise.all([
+      listContentByKind(kind),
+      listUsers(),
+    ]);
+    return { items, users };
+  }, [kind, tick]);
 
-  if (!user || !kind || !items || !users) return null;
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load content: {error}
+      </div>
+    );
+  if (!user || !kind || !data) return null;
+  const { items, users } = data;
   const meta = KIND_META[kind];
   const Icon = ICONS[kind as keyof typeof ICONS];
 
@@ -108,9 +120,14 @@ export default function KindListPage() {
   const reviewer = can.review(user.role);
   const publisher = can.publish(user.role);
 
-  const act = (id: string, status: ContentStatus, n?: string) => {
-    setStatus(id, status, user, n);
-    setTick((t) => t + 1);
+  const act = async (id: string, status: ContentStatus, n?: string) => {
+    try {
+      await setContentStatus(id, status, user, n);
+    } catch (e) {
+      // The publish trigger can refuse — show why rather than failing silently.
+      alert(e instanceof Error ? e.message : String(e));
+    }
+    refetch();
   };
 
   const preview = items.find((c) => c.id === previewId) ?? null;
@@ -699,10 +716,11 @@ export default function KindListPage() {
           <ConfirmDelete
             item={items.find((c) => c.id === deleteId) ?? null}
             onClose={() => setDeleteId(null)}
-            onConfirm={(id) => {
-              deleteContent(id, user);
+            onConfirm={async (id) => {
+              await deleteContent(id, user);
               setDeleteId(null);
               setPreviewId((p) => (p === id ? null : p));
+              refetch();
             }}
           />
         </>
@@ -762,7 +780,7 @@ function ConfirmDelete({
   onClose,
   onConfirm,
 }: {
-  item: ReturnType<typeof contentByKind>[number] | null;
+  item: ContentItem | null;
   onClose: () => void;
   onConfirm: (id: string) => void;
 }) {

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * Async twin of useStore. Returns null while loading — the same signal the
- * pages already branch on — plus an error and a refetch, so migrating a page
- * is a one-line swap:
+ * Data loader for the pages. Returns null while loading — the signal the pages
+ * branch on — plus an error to surface and a refetch to call after a write:
  *
- *   const data = useStore(() => ({ content: getContent() }));
- *   const { data } = useQuery(async () => ({ content: await listContent() }));
+ *   const { data, error, refetch } = useQuery(async () => ({
+ *     content: await listContent(),
+ *   }));
  */
 export function useQuery<T>(
   fetcher: () => Promise<T>,

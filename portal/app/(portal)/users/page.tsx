@@ -6,8 +6,8 @@ import { motion } from "framer-motion";
 import { UserPlus } from "lucide-react";
 import { Avatar, Modal, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { getUsers, logAudit, saveUsers, uid } from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+import { inviteUser, listUsers, logAudit, updateUser } from "@/lib/db";
+import { useQuery } from "@/lib/useQuery";
 import { ROLE_META, type Role } from "@/lib/types";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
@@ -15,55 +15,64 @@ const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
 export default function UsersPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [tick, setTick] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", role: "writer" as Role });
 
   useEffect(() => {
     if (user && !can.manageUsers(user.role)) router.replace("/dashboard");
   }, [user, router]);
 
-  const users = useStore(() => getUsers(), [tick]);
+  const { data: users, error, refetch } = useQuery(() => listUsers());
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load the team: {error}
+      </div>
+    );
   if (!user || !users || !can.manageUsers(user.role)) return null;
 
-  const toggleActive = (id: string) => {
-    const all = getUsers();
-    const u = all.find((x) => x.id === id);
+  const toggleActive = async (id: string) => {
+    const u = users.find((x) => x.id === id);
     if (!u || u.id === user.id) return;
-    u.isActive = !u.isActive;
-    saveUsers(all);
-    logAudit(user, u.isActive ? "reactivated" : "deactivated", "user", u.fullName);
-    setTick((t) => t + 1);
+    await updateUser(id, { isActive: !u.isActive });
+    await logAudit(
+      user,
+      !u.isActive ? "reactivated" : "deactivated",
+      "user",
+      u.fullName
+    );
+    refetch();
   };
 
-  const setRole = (id: string, role: Role) => {
-    const all = getUsers();
-    const u = all.find((x) => x.id === id);
+  const setRole = async (id: string, role: Role) => {
+    const u = users.find((x) => x.id === id);
     if (!u || u.id === user.id) return;
-    u.role = role;
-    saveUsers(all);
-    logAudit(user, `set role ${ROLE_META[role].label}`, "user", u.fullName);
-    setTick((t) => t + 1);
+    await updateUser(id, { role });
+    await logAudit(user, `set role ${ROLE_META[role].label}`, "user", u.fullName);
+    refetch();
   };
 
-  const invite = () => {
-    if (!form.name || !form.email) return;
-    const all = getUsers();
-    all.push({
-      id: uid(),
-      email: form.email,
-      fullName: form.name,
-      role: form.role,
-      languages: ["en"],
-      states: [],
-      isActive: true,
-      avatarHue: Math.floor(Math.random() * 360),
-    });
-    saveUsers(all);
-    logAudit(user, "invited", "user", form.name);
-    setAdding(false);
-    setForm({ name: "", email: "", role: "writer" });
-    setTick((t) => t + 1);
+  const invite = async () => {
+    if (!form.name || !form.email || busy) return;
+    setBusy(true);
+    try {
+      await inviteUser({
+        email: form.email,
+        fullName: form.name,
+        role: form.role,
+        languages: ["en"],
+        states: [],
+        isActive: true,
+        avatarHue: Math.floor(Math.random() * 360),
+      });
+      await logAudit(user, "invited", "user", form.name);
+      setAdding(false);
+      setForm({ name: "", email: "", role: "writer" });
+      refetch();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

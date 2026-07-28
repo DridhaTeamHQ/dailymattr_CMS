@@ -6,8 +6,9 @@ import { motion } from "framer-motion";
 import { ArrowLeft, History } from "lucide-react";
 import { Avatar, Pill, SectionHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { getAudit, getUsers, timeAgo } from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+import { listAudit, listUsers } from "@/lib/db";
+import { timeAgo } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 
 const PAGE = 25;
 
@@ -32,11 +33,17 @@ export default function ActivityPage() {
   const [shown, setShown] = useState(PAGE);
   const [who, setWho] = useState<string>("all");
 
-  const data = useStore(() => ({
-    audit: getAudit(),
-    users: getUsers(),
-  }));
+  const { data, error } = useQuery(async () => {
+    const [audit, users] = await Promise.all([listAudit(500), listUsers()]);
+    return { audit, users };
+  });
 
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load activity: {error}
+      </div>
+    );
   if (!user || !data) return null;
 
   const filtered =

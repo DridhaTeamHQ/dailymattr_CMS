@@ -3,9 +3,8 @@
 /**
  * Supabase data access for the CMS.
  *
- * Mirrors the shape of lib/store.ts (the localStorage demo layer) one-for-one,
- * but every call is async. Pages migrate by swapping `useStore(() => getX())`
- * for `useQuery(() => listX())` — the returned objects are identical.
+ * The single place the portal talks to Postgres. Pages call these through
+ * useQuery; nothing reads or writes browser storage.
  *
  * Column names are snake_case in Postgres and camelCase in the app; the row
  * mappers below are the only place that translation lives.
@@ -233,6 +232,23 @@ export async function createContent(item: Partial<ContentItem>) {
   return toContent(data as Row);
 }
 
+export async function deleteContent(id: string, actor: CmsUser) {
+  const item = await getContentItem(id);
+  const { error } = await supabase.from("content_items").delete().eq("id", id);
+  fail("deleteContent", error);
+  if (item) await logAudit(actor, "deleted", item.kind, item.title);
+}
+
+/** Newest-activity first, matching how the libraries list content. */
+export async function listContentByKind(kind: ContentKind) {
+  const items = await listContent(kind);
+  return items.sort((a, b) => {
+    const t = (c: ContentItem) =>
+      new Date(c.publishedAt || c.updatedAt || c.createdAt).getTime();
+    return t(b) - t(a);
+  });
+}
+
 export async function updateContent(id: string, patch: Partial<ContentItem>) {
   const { data, error } = await supabase
     .from("content_items")
@@ -413,16 +429,23 @@ export async function listNewsStudio(limit = 60): Promise<NewsStudioArticle[]> {
   return (data ?? []).map(toNewsStudio).filter((a) => a.title);
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getNewsStudioByIds(
   ids: string[]
 ): Promise<NewsStudioArticle[]> {
-  if (!newsstudio || ids.length === 0) return [];
+  // article_selections can outlive the pipeline row it points at, and older
+  // rows may hold non-uuid ids. Postgres errors on a malformed uuid, which
+  // would take down the whole page — so only ask for ids it can parse.
+  const valid = ids.filter((id) => UUID_RE.test(id));
+  if (!newsstudio || valid.length === 0) return [];
   const { data, error } = await newsstudio
     .from("articles")
     .select(
       "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at"
     )
-    .in("id", ids);
+    .in("id", valid);
   fail("getNewsStudioByIds", error);
   return (data ?? []).map(toNewsStudio);
 }

@@ -2,58 +2,59 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
-  getCategories,
+  addCategory,
+  listCategories,
   logAudit,
-  resetDemoData,
-  saveCategories,
-  slugify,
-} from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+  removeCategory,
+  setCategoryActive,
+} from "@/lib/db";
+import { slugify } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const [tick, setTick] = useState(0);
   const [name, setName] = useState("");
-  const categories = useStore(() => getCategories(), [tick]);
+  const { data: categories, error, refetch } = useQuery(() => listCategories());
 
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load categories: {error}
+      </div>
+    );
   if (!user || !categories) return null;
   const manager = can.manageCategories(user.role);
 
-  const add = () => {
+  const add = async () => {
     if (!name.trim() || !manager) return;
-    const all = getCategories();
-    all.push({
+    await addCategory({
       slug: slugify(name),
       name: name.trim(),
       kind: null,
-      sortOrder: all.length + 1,
+      sortOrder: categories.length + 1,
       isActive: true,
     });
-    saveCategories(all);
-    logAudit(user, "added category", "category", name.trim());
+    await logAudit(user, "added category", "category", name.trim());
     setName("");
-    setTick((t) => t + 1);
+    refetch();
   };
 
-  const toggle = (slug: string) => {
+  const toggle = async (slug: string) => {
     if (!manager) return;
-    const all = getCategories();
-    const c = all.find((x) => x.slug === slug);
+    const c = categories.find((x) => x.slug === slug);
     if (!c) return;
-    c.isActive = !c.isActive;
-    saveCategories(all);
-    setTick((t) => t + 1);
+    await setCategoryActive(slug, !c.isActive);
+    refetch();
   };
 
-  const remove = (slug: string) => {
+  const remove = async (slug: string) => {
     if (!manager) return;
-    const all = getCategories().filter((x) => x.slug !== slug);
-    saveCategories(all);
-    setTick((t) => t + 1);
+    await removeCategory(slug);
+    refetch();
   };
 
   return (
@@ -123,35 +124,22 @@ export default function SettingsPage() {
       </div>
 
       <div className="card mt-6 p-6">
-        <h3 className="mb-1 font-bold">Demo data</h3>
-        <p className="mb-4 text-sm text-muted">
-          Everything in this demo lives in your browser's local storage. Reset
-          restores the seed content, users and curation.
-        </p>
-        <button
-          onClick={() => {
-            resetDemoData();
-            location.reload();
-          }}
-          className="btn-ghost flex items-center gap-2 px-4 py-2 text-xs !text-rose"
-        >
-          <RotateCcw size={14} /> Reset demo data
-        </button>
-      </div>
-
-      <div className="card mt-6 p-6">
-        <h3 className="mb-1 font-bold">Coming with the backend</h3>
+        <h3 className="mb-1 font-bold">Where this data lives</h3>
         <p className="text-sm leading-relaxed text-muted">
-          When the Supabase database is wired in (see MVP_PLAN.md), this page
-          gains: language &amp; state scoping, storage buckets, publish
-          scheduling and the NewsStudio read-only connection.
+          The Studio reads and writes the <b>DailyMattr CMS</b> Supabase
+          project. Role permissions are enforced by row-level security and a
+          publish trigger, not by the buttons this page hides — so a writer
+          cannot publish even by calling the API directly. NewsStudio articles
+          are read from the pipeline database, which the CMS never writes to.
         </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {["Supabase Auth", "RLS", "Storage", "NewsStudio DB"].map((t) => (
-            <Pill key={t} tone="accent">
-              {t}
-            </Pill>
-          ))}
+          {["Supabase Auth", "RLS", "Publish trigger", "NewsStudio (read-only)"].map(
+            (t) => (
+              <Pill key={t} tone="accent">
+                {t}
+              </Pill>
+            )
+          )}
         </div>
       </div>
     </div>

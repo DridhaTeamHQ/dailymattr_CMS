@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save, Send, Sparkles } from "lucide-react";
@@ -11,14 +11,14 @@ import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
-  getCategories,
-  getContent,
+  createContent,
+  getContentItem,
+  listCategories,
   logAudit,
-  setStatus,
-  slugify,
-  uid,
-  upsertContent,
-} from "@/lib/store";
+  setContentStatus,
+  updateContent,
+} from "@/lib/db";
+import { slugify } from "@/lib/store";
 import {
   PIX_POINT_COUNT,
   getPixPoints,
@@ -26,10 +26,16 @@ import {
   type PixPlacement,
 } from "@/lib/pix";
 import { markReport } from "@/lib/pixHighlight";
-import { KIND_META, type ContentItem, type ContentKind } from "@/lib/types";
+import {
+  KIND_META,
+  type Category,
+  type ContentItem,
+  type ContentKind,
+} from "@/lib/types";
 
+/** A blank item. Its id stays empty until the database assigns one on save. */
 const emptyItem = (kind: ContentKind, userId: string): ContentItem => ({
-  id: uid(),
+  id: "",
   kind,
   title: "",
   slug: "",
@@ -71,7 +77,13 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const [scraping, setScraping] = useState(false);
   const [scrapeErr, setScrapeErr] = useState<string | null>(null);
   const [scrapeMsg, setScrapeMsg] = useState<string | null>(null);
-  const categories = useMemo(() => getCategories(), []);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    listCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
 
   const handleScrapeVideo = async () => {
     if (!ytUrl.trim()) return;
@@ -107,14 +119,20 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
   useEffect(() => {
     if (!user) return;
-    if (editId) {
-      const found = getContent().find((c) => c.id === editId);
-      if (found) {
-        setItem(found);
-        return;
+    let alive = true;
+    (async () => {
+      if (editId) {
+        const found = await getContentItem(editId);
+        if (alive && found) {
+          setItem(found);
+          return;
+        }
       }
-    }
-    setItem(emptyItem(kind, user.id));
+      if (alive) setItem(emptyItem(kind, user.id));
+    })();
+    return () => {
+      alive = false;
+    };
   }, [editId, kind, user]);
 
   useEffect(() => {
@@ -203,20 +221,34 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
     return filled;
   };
 
-  const persist = (submit: boolean) => {
-    const final: ContentItem = {
-      ...item,
-      slug: item.slug || slugify(item.title),
-    };
-    upsertContent(final);
-    if (submit) {
-      setStatus(final.id, "in_review", user);
-      setSaved("review");
-      setTimeout(() => router.push(listHref), 700);
-    } else {
-      logAudit(user, "saved draft", kind, final.title || "(untitled)");
-      setSaved("draft");
-      setTimeout(() => setSaved(null), 1600);
+  const persist = async (submit: boolean) => {
+    if (saving) return;
+    setSaving(true);
+    setSaveErr(null);
+    try {
+      const draft: ContentItem = {
+        ...item,
+        slug: item.slug || slugify(item.title),
+      };
+      // No id yet means this is the first save — let the database mint one.
+      const stored = draft.id
+        ? await updateContent(draft.id, draft)
+        : await createContent({ ...draft, id: undefined });
+      setItem(stored);
+
+      if (submit) {
+        await setContentStatus(stored.id, "in_review", user);
+        setSaved("review");
+        setTimeout(() => router.push(listHref), 700);
+      } else {
+        await logAudit(user, "saved draft", kind, stored.title || "(untitled)");
+        setSaved("draft");
+        setTimeout(() => setSaved(null), 1600);
+      }
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
     }
   };
 

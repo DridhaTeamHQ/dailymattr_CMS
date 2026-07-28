@@ -18,16 +18,17 @@ import NewsVisual from "@/components/NewsVisual";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
-  contentByKind,
-  getNewsStudio,
-  getSelections,
-  getUsers,
+  approveArticle,
+  listContentByKind,
+  listNewsStudio,
+  listSelections,
+  listUsers,
   logAudit,
-  saveSelections,
-  timeAgo,
+  unapproveArticle,
   updateSelection,
-} from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+} from "@/lib/db";
+import { timeAgo } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 import type { NewsStudioArticle } from "@/lib/types";
 
 type Tab = "newsstudio" | "cms" | "feed";
@@ -37,72 +38,63 @@ export default function ArticlesPage() {
   const [tab, setTab] = useState<Tab>("newsstudio");
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
 
-  const data = useStore(
-    () => ({
-      newsstudio: getNewsStudio(),
-      selections: getSelections(),
-      written: contentByKind("article"),
-      users: getUsers(),
-    }),
-    [tick]
-  );
+  const { data, error, refetch } = useQuery(async () => {
+    const [newsstudio, selections, written, users] = await Promise.all([
+      listNewsStudio(60),
+      listSelections(),
+      listContentByKind("article"),
+      listUsers(),
+    ]);
+    return { newsstudio, selections, written, users };
+  });
 
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load articles: {error}
+      </div>
+    );
   if (!user) return null;
   const approver = can.approveArticles(user.role);
-  const refresh = () => setTick((t) => t + 1);
+  const refresh = () => refetch();
 
   // ── approval actions ────────────────────────────────────────────
-  const approve = (art: NewsStudioArticle) => {
+  const approve = async (art: NewsStudioArticle) => {
     if (!approver) return;
-    const sel = getSelections();
-    if (sel.some((s) => s.articleId === art.id)) return;
-    saveSelections([
-      ...sel,
-      {
-        articleId: art.id,
-        position: sel.length + 1,
-        isFeatured: false,
-        approvedBy: user.id,
-        approvedAt: new Date().toISOString(),
-        titleOverride: null,
-        summaryOverride: null,
-      },
-    ]);
-    logAudit(user, "approved for app feed", "newsstudio article", art.title);
+    if (data?.selections.some((s) => s.articleId === art.id)) return;
+    await approveArticle(art.id, user, art.title);
     refresh();
   };
 
-  const unapprove = (art: NewsStudioArticle) => {
+  const unapprove = async (art: NewsStudioArticle) => {
     if (!approver) return;
-    saveSelections(getSelections().filter((s) => s.articleId !== art.id));
-    logAudit(user, "removed from app feed", "newsstudio article", art.title);
+    await unapproveArticle(art.id, user, art.title);
     refresh();
   };
 
-  const toggleApproval = (art: NewsStudioArticle) => {
-    const approved = getSelections().some((s) => s.articleId === art.id);
-    if (approved) unapprove(art);
-    else approve(art);
+  const toggleApproval = async (art: NewsStudioArticle) => {
+    const approved = data?.selections.some((s) => s.articleId === art.id);
+    if (approved) await unapprove(art);
+    else await approve(art);
   };
 
-  const toggleFeature = (art: NewsStudioArticle) => {
+  const toggleFeature = async (art: NewsStudioArticle) => {
     if (!approver) return;
-    const sel = getSelections().find((s) => s.articleId === art.id);
+    const sel = data?.selections.find((s) => s.articleId === art.id);
     if (!sel) return approve(art);
-    updateSelection(art.id, { isFeatured: !sel.isFeatured });
+    await updateSelection(art.id, { isFeatured: !sel.isFeatured });
     if (!sel.isFeatured)
-      logAudit(user, "featured", "newsstudio article", art.title);
+      await logAudit(user, "featured", "newsstudio article", art.title);
     refresh();
   };
 
-  const saveOverrides = (
+  const saveOverrides = async (
     art: NewsStudioArticle,
     patch: { titleOverride: string | null; summaryOverride: string | null }
   ) => {
-    updateSelection(art.id, patch);
-    logAudit(user, "edited app copy for", "newsstudio article", art.title);
+    await updateSelection(art.id, patch);
+    await logAudit(user, "edited app copy for", "newsstudio article", art.title);
     refresh();
   };
 

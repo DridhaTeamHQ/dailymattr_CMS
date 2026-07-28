@@ -8,11 +8,17 @@ import {
   useMemo,
   useState,
 } from "react";
-import { DEMO_PASSWORD } from "./mock";
-import { getUsers } from "./store";
+import { supabase } from "./supabase";
 import type { CmsUser, Role } from "./types";
 
-const SESSION_KEY = "dailymattr-cms:session";
+/**
+ * Supabase Auth. The session is the source of truth; the CMS profile (role,
+ * languages, states) is read from cms_users, whose id matches auth.uid().
+ *
+ * The role returned here only drives what the UI offers — the database enforces
+ * the same rules through RLS and the publish trigger, so hiding a button is a
+ * convenience, not the security boundary.
+ */
 
 interface AuthCtx {
   user: CmsUser | null;
@@ -21,64 +27,130 @@ interface AuthCtx {
     email: string,
     password: string,
     role: Role
-  ) => { ok: true } | { ok: false; error: string };
-  logout: () => void;
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx>({
   user: null,
   ready: false,
-  login: () => ({ ok: false, error: "not ready" }),
-  logout: () => {},
+  login: async () => ({ ok: false, error: "not ready" }),
+  logout: async () => {},
+  refresh: async () => {},
 });
+
+async function loadProfile(userId: string): Promise<CmsUser | null> {
+  const { data, error } = await supabase
+    .from("cms_users")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    email: data.email,
+    fullName: data.full_name,
+    role: data.role,
+    languages: data.languages ?? [],
+    states: data.states ?? [],
+    isActive: data.is_active,
+    avatarHue: data.avatar_hue ?? 220,
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CmsUser | null>(null);
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const { userId } = JSON.parse(raw) as { userId: string };
-        const u = getUsers().find((x) => x.id === userId && x.isActive);
-        if (u) setUser(u);
-      }
-    } catch {
-      /* fresh session */
+  const syncFromSession = useCallback(async (userId: string | undefined) => {
+    if (!userId) {
+      setUser(null);
+      return;
     }
-    setReady(true);
+    const profile = await loadProfile(userId);
+    // A signed-in account with no CMS profile (or a disabled one) has no
+    // business in the Studio — drop the session rather than show a broken shell.
+    if (!profile || !profile.isActive) {
+      await supabase.auth.signOut();
+      setUser(null);
+      return;
+    }
+    setUser(profile);
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+
+    supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!alive) return;
+        await syncFromSession(data.session?.user?.id);
+      })
+      .finally(() => {
+        if (alive) setReady(true);
+      });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      void syncFromSession(session?.user?.id);
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [syncFromSession]);
+
   const login = useCallback(
-    (email: string, password: string, role: Role) => {
-      const u = getUsers().find(
-        (x) => x.email.toLowerCase() === email.trim().toLowerCase()
-      );
-      if (!u || !u.isActive)
-        return { ok: false as const, error: "No active account with that email." };
-      if (u.role !== role)
+    async (email: string, password: string, role: Role) => {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) return { ok: false as const, error: error.message };
+
+      const profile = await loadProfile(data.user.id);
+      if (!profile) {
+        await supabase.auth.signOut();
         return {
           ok: false as const,
-          error: `This account is registered as ${u.role.replace("_", " ")}, not the selected role.`,
+          error: "That account has no Studio profile yet — ask an admin to add you.",
         };
-      if (password !== DEMO_PASSWORD)
-        return { ok: false as const, error: "Incorrect password. (Demo: mattr123)" };
-      window.localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: u.id }));
-      setUser(u);
+      }
+      if (!profile.isActive) {
+        await supabase.auth.signOut();
+        return { ok: false as const, error: "That account has been deactivated." };
+      }
+      // The role picker is a shortcut, not a second credential — but a mismatch
+      // usually means the wrong tile was tapped, so say so plainly.
+      if (profile.role !== role) {
+        await supabase.auth.signOut();
+        return {
+          ok: false as const,
+          error: `This account signs in as ${profile.role.replace("_", " ")} — pick that role.`,
+        };
+      }
+      setUser(profile);
       return { ok: true as const };
     },
     []
   );
 
-  const logout = useCallback(() => {
-    window.localStorage.removeItem(SESSION_KEY);
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
   }, []);
 
+  const refresh = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    await syncFromSession(data.session?.user?.id);
+  }, [syncFromSession]);
+
   const value = useMemo(
-    () => ({ user, ready, login, logout }),
-    [user, ready, login, logout]
+    () => ({ user, ready, login, logout, refresh }),
+    [user, ready, login, logout, refresh]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

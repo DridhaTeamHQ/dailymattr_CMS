@@ -11,8 +11,9 @@ import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import { filledPixPoints } from "@/lib/pix";
 import { stripHighlightBrackets } from "@/lib/pixComposer";
-import { getContent, getUsers, setStatus, timeAgo } from "@/lib/store";
-import { useStore } from "@/lib/useStore";
+import { listContent, listUsers, setContentStatus } from "@/lib/db";
+import { timeAgo } from "@/lib/store";
+import { useQuery } from "@/lib/useQuery";
 import { KIND_META, type CmsUser, type ContentItem } from "@/lib/types";
 
 function Row({
@@ -107,15 +108,21 @@ export default function ReviewPage() {
     if (user && !can.review(user.role)) router.replace("/dashboard");
   }, [user, router]);
 
-  const data = useStore(
-    () => ({
-      queue: getContent().filter((c) => c.status === "in_review"),
-      approved: getContent().filter((c) => c.status === "approved"),
-      users: getUsers(),
-    }),
-    [tick]
-  );
+  const { data, error, refetch } = useQuery(async () => {
+    const [content, users] = await Promise.all([listContent(), listUsers()]);
+    return {
+      queue: content.filter((c) => c.status === "in_review"),
+      approved: content.filter((c) => c.status === "approved"),
+      users,
+    };
+  }, [tick]);
 
+  if (error)
+    return (
+      <div className="card p-8 text-sm text-rose">
+        Couldn&apos;t load the review queue: {error}
+      </div>
+    );
   if (!user || !data || !can.review(user.role)) return null;
   const publisher = can.publish(user.role);
   const preview =
@@ -128,9 +135,18 @@ export default function ReviewPage() {
   const queueRows = pageSlice(data.queue, qPage, size);
   const approvedRows = pageSlice(data.approved, aPage, size);
 
-  const act = (id: string, status: "approved" | "published" | "rejected", n?: string) => {
-    setStatus(id, status, user, n);
-    setTick((t) => t + 1);
+  const act = async (
+    id: string,
+    status: "approved" | "published" | "rejected",
+    n?: string
+  ) => {
+    try {
+      await setContentStatus(id, status, user, n);
+    } catch (e) {
+      // The database has the final say on publishing — surface its refusal.
+      alert(e instanceof Error ? e.message : String(e));
+    }
+    refetch();
   };
 
   return (
