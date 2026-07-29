@@ -86,7 +86,6 @@ function KindList() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [tab, setTab] = useState<PixTab>("all");
-  const [tick, setTick] = useState(0);
   const [page, setPage] = usePageParam();
   const [activeVideo, setActiveVideo] = useState<ContentItem | null>(null);
 
@@ -151,7 +150,7 @@ function KindList() {
       // Next/previous in the Trax player walk the library, not the page.
       library: items,
     };
-  }, [kind, page, size, tab, tick]);
+  }, [kind, page, size, tab]);
 
   const lastPage = data ? pageCount(data.total, size) : 1;
   // Approving the last item on a page — or a hand-typed ?page=99 — leaves the

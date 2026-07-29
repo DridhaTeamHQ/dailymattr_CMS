@@ -112,7 +112,6 @@ function ReviewQueue() {
   const { user } = useAuth();
   const toast = useToast();
   const router = useRouter();
-  const [tick, setTick] = useState(0);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -132,7 +131,7 @@ function ReviewQueue() {
       approved: content.filter((c) => c.status === "approved"),
       users,
     };
-  }, [tick]);
+  });
 
   if (error)
     return (

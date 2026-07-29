@@ -24,7 +24,7 @@ export function speakSummary(
     pitch?: number;
     onBoundary?: (charIndex: number) => void;
     onEnd?: () => void;
-    onError?: (err: any) => void;
+    onError?: (err: SpeechSynthesisErrorEvent) => void;
   } = {}
 ): () => void {
   if (!isSpeechSupported() || !text.trim()) return () => {};

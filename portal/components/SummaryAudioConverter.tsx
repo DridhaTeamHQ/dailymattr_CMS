@@ -139,8 +139,10 @@ export function SummaryAudioConverter({
           setIsPaused(false);
         },
       });
-    } catch (err: any) {
-      setStatusMsg(err?.message || "Error playing summary audio.");
+    } catch (err) {
+      setStatusMsg(
+        err instanceof Error ? err.message : "Error playing summary audio."
+      );
     } finally {
       setIsSyncing(false);
     }

@@ -1,0 +1,65 @@
+name: CI
+
+# Everything here has already caught something real:
+#
+#   - eslint found Math.random() in a render path, which made the server and
+#     the client disagree at hydration, and a stale closure that reset the
+#     voice picker. Both typechecked and built cleanly.
+#   - the conflict-marker check exists because markers reached main twice.
+#   - the build step is what proves the Docker image will build at all, since
+#     Railway runs the same command.
+#
+# Deliberately not run: scripts/test-api.mjs. It needs a running server with
+# database credentials, so it belongs against a deployment rather than here —
+# see DEPLOY.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - run: npm ci
+
+      # Cheapest and most specific first, so a failure says what is wrong
+      # rather than "the build broke".
+      - name: Conflict markers
+        working-directory: .
+        run: |
+          if git grep -nE '^(<{7}|={7}|>{7})( |$)' -- '*.ts' '*.tsx' '*.css' '*.json'; then
+            echo "::error::Conflict markers committed — resolve them before merging."
+            exit 1
+          fi
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      # NEXT_PUBLIC_* are read at build time, so the build needs values. These
+      # are publishable keys and are meant to reach the browser; RLS is what
+      # protects the data. Real values come from repository variables when set,
+      # and fall back to placeholders so a fork can still build.
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          NEXT_PUBLIC_NEWSSTUDIO_URL: ${{ vars.NEXT_PUBLIC_NEWSSTUDIO_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY: ${{ vars.NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY || 'placeholder-anon-key' }}
+        run: npm run build

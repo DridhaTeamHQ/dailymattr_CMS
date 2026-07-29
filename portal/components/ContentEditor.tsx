@@ -836,14 +836,28 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                       <button
                         type="button"
                         onClick={async () => {
-                          try {
-                            const { generateAudioFromText } = await import("@/lib/tts");
-                            const { audioUrl, durationSec } = await generateAudioFromText(item.summary, item.language);
-                            set("mediaUrl", audioUrl);
-                            set("durationSec", durationSec);
-                          } catch (e: any) {
-                            alert(e.message || "Failed to generate audio from summary.");
-                          }
+                          // The last window.alert() in the Studio. It blocks
+                          // the page and reads like a crash; generating audio
+                          // is a save-shaped action and gets the same
+                          // confirmation as any other.
+                          await toast.run(
+                            async () => {
+                              const { generateAudioFromText } = await import(
+                                "@/lib/tts"
+                              );
+                              const { audioUrl, durationSec } =
+                                await generateAudioFromText(
+                                  item.summary,
+                                  item.language
+                                );
+                              set("mediaUrl", audioUrl);
+                              set("durationSec", durationSec);
+                            },
+                            {
+                              success: "Audio generated from the summary",
+                              error: "Couldn't generate audio from that summary",
+                            }
+                          );
                         }}
                         className="flex items-center gap-1.5 text-[11px] font-bold text-accent hover:underline mb-2"
                       >
