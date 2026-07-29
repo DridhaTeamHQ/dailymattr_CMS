@@ -11,6 +11,7 @@ import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { mediaBlocker } from "@/lib/media";
+import { MEDIA, uploadBlob } from "@/lib/storage";
 import {
   createContent,
   getContentItem,
@@ -118,7 +119,31 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
 
       const data = await res.json();
       if (data.success) {
-        if (data.videoUrl) set("mediaUrl", data.videoUrl);
+        /* Move the downloaded clip off this machine.
+         *
+         * The route writes it to the CMS's own `public/uploads`, which is
+         * fine as a staging step and useless as an address: what got saved was
+         * `http://localhost:3000/api/media/…`, correct for whoever is sitting
+         * at the CMS and meaningless on a reader's phone. The upload happens
+         * from here, in the browser, so it runs as the signed-in editor and
+         * satisfies the bucket's row-level policy without the server needing a
+         * service key. */
+        if (data.videoUrl) {
+          setScrapeMsg("Downloaded — uploading to storage…");
+          try {
+            const file = await fetch(data.videoUrl).then((r) => r.blob());
+            const url = await uploadBlob(MEDIA, file, "qix");
+            set("mediaUrl", url);
+          } catch (e) {
+            setScrapeErr(
+              `Downloaded, but the upload to storage failed: ${
+                e instanceof Error ? e.message : String(e)
+              }`
+            );
+            setScraping(false);
+            return;
+          }
+        }
         if (data.coverUrl) set("coverUrl", data.coverUrl);
         if (data.durationSec) set("durationSec", data.durationSec);
         // Don't clobber a headline the writer has already typed.

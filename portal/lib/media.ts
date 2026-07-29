@@ -136,6 +136,13 @@ export function mediaBlocker(
   if (isUnreachableHost(s)) {
     return `That ${noun} is on localhost, which on a reader's phone means their phone. Set MEDIA_BASE_URL to a public address and re-import, or host the file somewhere the app can reach.`;
   }
+  /* An inlined file is not a link, it *is* the file — sitting in a text column
+     and travelling inside every feed response that mentions the row. Dropping
+     a file uploads it to the media bucket now, so this only catches items
+     created before that existed. */
+  if (s.startsWith("data:")) {
+    return `That ${noun} is embedded in the database rather than stored. Re-upload the file so it gets a real URL.`;
+  }
   if (kind === "trax" && !isPlayableAudio(s)) {
     return HTTP_RE.test(s)
       ? "That audio link is not a file the app can play. It needs to point at an .mp3/.m4a/.aac file."
