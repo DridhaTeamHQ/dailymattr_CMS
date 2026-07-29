@@ -261,6 +261,18 @@ textarea:focus {
   animation: float-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* ── sidebar ──────────────────────────────────────────────────────── */
+/* The rail scrolls on short screens so the sign-out button cannot be pushed
+   out of it. A visible scrollbar inside an 86px column of icons is wider than
+   the gap between them and reads as damage, so it is hidden — the rail is
+   short enough that the icons themselves show there is more to reach. */
+.sidebar-nav {
+  scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── skeleton shimmer ─────────────────────────────────────────────── */
 @keyframes skeleton-shimmer {
   0%   { background-position: -400px 0; }
