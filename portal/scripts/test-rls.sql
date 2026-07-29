@@ -75,7 +75,58 @@ select * from (values
    pg_temp.try($$update cms_users set role='qa' where id='33333333-3333-4333-8333-333333333333'$$)),
   ('admin: deactivate a user',
    pg_temp.as_user('11111111-1111-4111-8111-111111111111')::text,
-   pg_temp.try($$update cms_users set is_active=false where id='33333333-3333-4333-8333-333333333333'$$))
+   pg_temp.try($$update cms_users set is_active=false where id='33333333-3333-4333-8333-333333333333'$$)),
+  ('writer: change own id',
+   pg_temp.as_user('33333333-3333-4333-8333-333333333333')::text,
+   pg_temp.try($$update cms_users set id='eeeeeeee-0000-4000-8000-00000000beef' where id='33333333-3333-4333-8333-333333333333'$$))
 ) as t(test, _ctx, result);
+
+rollback;
+
+-- ── signing in adopts an invited profile ────────────────────────────
+--
+-- Adding someone on the Team page cannot create their Supabase Auth account, so
+-- the profile exists before the login does. When the login is created, the
+-- trigger has to move that profile onto the new auth id — RLS matches
+-- auth.uid() against cms_users.id, so a profile left on its old id would sign
+-- in with no permissions at all.
+--
+-- Expect: one row, id equal to the new auth id, and the invited role intact.
+begin;
+
+insert into cms_users (id, email, full_name, role, languages, states, is_active, avatar_hue)
+values ('bbbbbbbb-0000-4000-8000-00000000aaaa', 'invited.probe@example.com',
+        'Invited Probe', 'chief_editor', array['en'], array[]::text[], true, 200);
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at,
+                        raw_app_meta_data, raw_user_meta_data)
+values ('bbbbbbbb-0000-4000-8000-00000000bbbb',
+        '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+        'invited.probe@example.com', 'x', now(), now(), now(),
+        '{}'::jsonb, '{}'::jsonb);
+
+select
+  (select count(*) from cms_users where email='invited.probe@example.com') as profile_rows,
+  (select id   from cms_users where email='invited.probe@example.com') = 'bbbbbbbb-0000-4000-8000-00000000bbbb' as moved_to_auth_id,
+  (select role from cms_users where email='invited.probe@example.com') = 'chief_editor' as invited_role_kept;
+
+rollback;
+
+-- ── a signup with no invite still works ─────────────────────────────
+begin;
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at,
+                        raw_app_meta_data, raw_user_meta_data)
+values ('cccccccc-0000-4000-8000-00000000cccc',
+        '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+        'fresh.probe@example.com', 'x', now(), now(), now(),
+        '{}'::jsonb, '{"full_name":"Fresh Probe"}'::jsonb);
+
+select
+  (select role      from cms_users where email='fresh.probe@example.com') = 'writer' as defaults_to_writer,
+  (select full_name from cms_users where email='fresh.probe@example.com') = 'Fresh Probe' as name_from_metadata,
+  (select id        from cms_users where email='fresh.probe@example.com') = 'cccccccc-0000-4000-8000-00000000cccc' as id_matches_auth;
 
 rollback;

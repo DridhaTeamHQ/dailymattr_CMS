@@ -312,12 +312,22 @@ export default function UsersPage() {
             {busy ? "Adding…" : "Add to team"}
           </button>
           {/* Honest about the gap: this writes the Studio profile, but the
-              sign-in account is created separately in Supabase Auth. */}
-          <p className="text-[11px] leading-relaxed text-faint">
-            This creates their Studio profile and role. They can sign in once an
-            administrator has created their login in Supabase Auth with the same
-            email address.
-          </p>
+              sign-in account is created separately in Supabase Auth — a browser
+              cannot create one, that needs the admin API. Spelled out as steps
+              because "created separately" read as a footnote, and people added
+              here were left with a profile and no way in. */}
+          <div className="space-y-1.5 rounded-xl bg-canvas p-3 text-[11px] leading-relaxed text-muted">
+            <p className="font-bold text-ink">This does not create their login</p>
+            <p>
+              It saves their Studio profile and role. To let them in, open
+              Supabase → Authentication → Users → <b>Add user</b>, and use the
+              same email address.
+            </p>
+            <p className="text-faint">
+              Their role here is kept — signing in adopts this profile rather
+              than replacing it.
+            </p>
+          </div>
         </div>
       </Modal>
     </div>
