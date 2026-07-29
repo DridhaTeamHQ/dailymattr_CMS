@@ -71,10 +71,47 @@ export function rateLimit(rules: LimitRule[]): LimitResult {
   return { ok: true, remaining, retryAfter: 0 };
 }
 
-/** Best-effort client IP from proxy headers, falling back to a shared bucket. */
+/**
+ * How many proxies of our own sit in front of this server.
+ *
+ * One for Railway's edge, which is the deployment this is written for. Raise it
+ * only for proxies we actually control — every hop trusted here is a hop an
+ * attacker can forge past.
+ */
+const TRUSTED_PROXY_HOPS = Math.max(
+  1,
+  Number(process.env.TRUSTED_PROXY_HOPS ?? 1) || 1
+);
+
+/**
+ * The client's address, as far as it can be established.
+ *
+ * This read the *first* entry of x-forwarded-for, which is the one value in
+ * that header a client can write. Sending a different X-Forwarded-For on every
+ * request produced a fresh bucket every time, so every per-address limit in the
+ * app — account creation, video downloads, the routes that cost money to run —
+ * came off with a single header. Measured before the change: 24 requests
+ * against a 20-per-minute limit, 23 of them served.
+ *
+ * The header reads "client, proxy1, proxy2", and each proxy appends the address
+ * it received the request from. So the rightmost entries are written by the
+ * infrastructure and the leftmost by whoever is calling. Counting back from the
+ * right by the number of proxies we run lands on the address our own edge saw,
+ * which is the last value in the chain an attacker cannot choose.
+ */
 export function clientIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0]!.trim();
+  if (fwd) {
+    const hops = fwd
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (hops.length) {
+      // Never past the start: a caller can pad the header with extra entries,
+      // and reading further left is exactly what this is here to avoid.
+      return hops[Math.max(0, hops.length - TRUSTED_PROXY_HOPS)]!;
+    }
+  }
   return req.headers.get("x-real-ip")?.trim() || "unknown";
 }
 

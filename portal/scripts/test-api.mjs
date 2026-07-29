@@ -49,9 +49,9 @@ async function post(path, body, headers = {}) {
   }
 }
 
-async function get(path) {
+async function get(path, headers = {}) {
   try {
-    const res = await fetch(`${BASE}${path}`);
+    const res = await fetch(`${BASE}${path}`, { headers });
     return { status: res.status, type: res.headers.get("content-type") };
   } catch (e) {
     return { status: 0, error: e.message };
@@ -199,6 +199,36 @@ async function main() {
       if (r.status === 429) sawLimit = true;
     }
     check("rate limits a burst", sawLimit, "26 requests without a 429");
+  }
+
+  // ── rate limiting cannot be shrugged off with a header ────────────
+  //
+  // x-forwarded-for reads "client, proxy1, proxy2" and each proxy appends the
+  // address it saw, so only the rightmost entries are written by our own
+  // infrastructure. Keying on the leftmost — the one value a caller controls —
+  // meant a different header per request bought a fresh quota every time, and
+  // every per-address limit in the app came off with one line of curl.
+  //
+  // Same trailing address throughout, different forged prefixes: the limiter
+  // should see one caller.
+  console.log("\nrate limiting");
+  {
+    let sawLimit = false;
+    let sent = 0;
+    for (let i = 0; i < 26 && !sawLimit; i++) {
+      sent++;
+      const r = await get(
+        `/api/tts?text=spoofprobe%20${i}&lang=en`,
+        // 25 distinct claimed addresses, one real one appended behind them.
+        { "X-Forwarded-For": `10.9.9.${i}, 192.0.2.123` }
+      );
+      if (r.status === 429) sawLimit = true;
+    }
+    check(
+      "a forged X-Forwarded-For does not buy a fresh quota",
+      sawLimit,
+      `${sent} requests with different claimed addresses, never limited`
+    );
   }
 
   // ── /api/users (creates sign-in accounts) ─────────────────────────
