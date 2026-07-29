@@ -648,28 +648,45 @@ export default function KindListPage() {
               )
             }
           />
-          <RejectWithNote
-            item={items.find((c) => c.id === rejectId) ?? null}
-            note={note}
-            onNote={setNote}
-            onClose={() => setRejectId(null)}
-            onConfirm={(id) => {
-              act(id, "rejected", note || undefined);
-              setRejectId(null);
-            }}
-          />
-          <ConfirmDelete
-            item={items.find((c) => c.id === deleteId) ?? null}
-            onClose={() => setDeleteId(null)}
-            onConfirm={async (id) => {
-              await deleteContent(id, user);
-              setDeleteId(null);
-              setPreviewId((p) => (p === id ? null : p));
-              refetch();
-            }}
-          />
         </>
       )}
+
+      {/* Declining and deleting are not Pix features.
+          These two sat inside the `kind === "pix"` block along with the Pix
+          poster preview, which is genuinely Pix-only. So on Qix and Trax the
+          trash button set `deleteId` and nothing rendered it: no dialog, no
+          error, no delete — a button that did nothing at all, on the two
+          libraries where the junk rows actually accumulated. */}
+      <RejectWithNote
+        item={items.find((c) => c.id === rejectId) ?? null}
+        note={note}
+        onNote={setNote}
+        onClose={() => setRejectId(null)}
+        onConfirm={(id) => {
+          act(id, "rejected", note || undefined);
+          setRejectId(null);
+        }}
+      />
+      <ConfirmDelete
+        kind={kind}
+        item={items.find((c) => c.id === deleteId) ?? null}
+        onClose={() => setDeleteId(null)}
+        onConfirm={async (id) => {
+          /* Surface a refusal rather than closing as though it worked.
+             RLS lets a writer delete only their own drafts; anything else is
+             an admin's to remove. PostgREST answers a filtered-out delete with
+             success and zero rows, so without this the dialog would close on a
+             row that is still there. */
+          try {
+            await deleteContent(id, user);
+            setDeleteId(null);
+            setPreviewId((p) => (p === id ? null : p));
+            refetch();
+          } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+          }
+        }}
+      />
     </div>
   );
 }
@@ -721,14 +738,19 @@ function RejectWithNote({
 }
 
 function ConfirmDelete({
+  kind,
   item,
   onClose,
   onConfirm,
 }: {
+  kind: ContentKind;
   item: ContentItem | null;
   onClose: () => void;
   onConfirm: (id: string) => void;
 }) {
+  // "Delete Pix?" over a video was a leftover from when this dialog was only
+  // ever reachable from the Pix library.
+  const noun = KIND_META[kind].label.replace(/s$/, "");
   return (
     <Modal
       open={!!item}
@@ -736,7 +758,7 @@ function ConfirmDelete({
       title={
         item?.status === "published"
           ? "Remove from the app feed?"
-          : "Delete Pix?"
+          : `Delete this ${noun}?`
       }
     >
       {item && (

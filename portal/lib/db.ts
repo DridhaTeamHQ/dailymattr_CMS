@@ -270,8 +270,31 @@ export async function createContent(item: Partial<ContentItem>) {
 
 export async function deleteContent(id: string, actor: CmsUser) {
   const item = await getContentItem(id);
-  const { error } = await supabase.from("content_items").delete().eq("id", id);
+
+  /* `.select()` so the refusal is visible.
+   *
+   * A delete the row-level policy filters out is not an error — PostgREST
+   * answers 204 with nothing deleted, `error` stays null, and the caller has
+   * no way to tell success from "you are not allowed to". Asking for the
+   * deleted rows back turns that into an empty array, which is checkable.
+   *
+   * The policy permits your own drafts, and anything at all for a super
+   * admin; a writer aiming at someone else's published item lands here. */
+  const { data, error } = await supabase
+    .from("content_items")
+    .delete()
+    .eq("id", id)
+    .select("id");
   fail("deleteContent", error);
+
+  if (!data?.length) {
+    throw new Error(
+      item && item.status !== "draft"
+        ? `"${item.title || "That item"}" is ${item.status.replace("_", " ")}, so only a super admin can delete it. Ask one, or send it back to draft first.`
+        : "You can only delete your own drafts — ask a super admin to remove this one."
+    );
+  }
+
   if (item) await logAudit(actor, "deleted", item.kind, item.title);
 }
 
