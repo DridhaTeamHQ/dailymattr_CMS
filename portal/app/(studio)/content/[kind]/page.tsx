@@ -23,6 +23,7 @@ import {
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
+import { StatsStrip } from "@/components/StatsStrip";
 import { TraxCard } from "@/components/TraxCard";
 import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
@@ -34,6 +35,7 @@ import {
   countContentByKind,
   deleteContent,
   listContentByKind,
+  listContentStats,
   listContentPage,
   listUsers,
   setContentStatus,
@@ -131,6 +133,10 @@ function KindList() {
   const { data, error, refetch } = useQuery(async () => {
     if (!kind) return null;
     const users = await listUsers();
+    /* Only asked for by the roles allowed to see it. RLS would refuse anyone
+       else anyway — this just avoids a pointless round trip, and avoids
+       logging a permission error for a request we knew would fail. */
+    const stats = user && can.seeStats(user.role) ? await listContentStats() : new Map();
 
     if (kind === "pix") {
       const bucket: ContentBucket =
@@ -139,7 +145,7 @@ function KindList() {
         listContentPage("pix", { page, size, bucket }),
         countContentByKind("pix"),
       ]);
-      return { users, rows: pix.rows, total: pix.total, counts, library: pix.rows };
+      return { users, stats, rows: pix.rows, total: pix.total, counts, library: pix.rows };
     }
 
     const items = await listContentByKind(kind);
@@ -148,6 +154,7 @@ function KindList() {
     const visible = tab === "queue" ? queue : tab === "feed" ? feed : items;
     return {
       users,
+      stats,
       rows: pageSlice(visible, page, size),
       total: visible.length,
       counts: {
@@ -174,13 +181,14 @@ function KindList() {
       </div>
     );
   if (!user || !kind || !data) return <ContentListSkeleton />;
-  const { users, counts, rows, library } = data;
+  const { users, counts, rows, library, stats } = data;
   const meta = KIND_META[kind];
   const Icon = ICONS[kind as keyof typeof ICONS];
 
   const isQix = kind === "qix";
   const isTrax = kind === "trax";
   const reviewer = can.review(user.role);
+  const showStats = can.seeStats(user.role);
   const publisher = can.publish(user.role);
 
   const act = async (id: string, status: ContentStatus, n?: string) => {
@@ -429,6 +437,17 @@ function KindList() {
                         author={author}
                         onView={() => setPreviewId(c.id)}
                         actions={actions}
+                      />
+                    )}
+                    {/* Under the tile rather than on it: these are numbers to
+                        scan down a column, and laid over the poster they would
+                        be one more thing competing with the artwork. Live
+                        content only — a draft has no readers, so a row of
+                        zeros would say nothing. */}
+                    {showStats && c.status === "published" && (
+                      <StatsStrip
+                        stats={stats.get(c.id)}
+                        className="mt-1.5 justify-center px-1"
                       />
                     )}
                   </motion.div>

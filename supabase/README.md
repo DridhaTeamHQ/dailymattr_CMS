@@ -26,6 +26,7 @@ Run in this order against a fresh project (they are already applied to
 | 7 | `revoke_helper_function_execute` | *(superseded by 9)* |
 | 8 | `seed_auth_users_for_demo` | Real `auth.users` rows for the demo logins |
 | 9 | `move_helpers_to_private_schema` | Moves policy helpers into `private` so PostgREST can't expose them |
+| 10 | `10_engagement` | **Not applied yet.** `content_reactions`, `content_events`, the `content_stats` view, and the two RPCs the app writes through. Read access is limited to `super_admin` and `chief_editor`; the app writes as `anon` through security-definer functions rather than touching the tables. |
 
 ## Views
 

@@ -353,6 +353,15 @@ export const can = {
     r === "qa" || r === "chief_editor" || r === "super_admin",
   curate: (r: Role) => r === "chief_editor" || r === "super_admin",
   manageUsers: (r: Role) => r === "super_admin",
+  /**
+   * See engagement numbers. Deliberately narrower than `review`: a writer
+   * watching live like counts on their own work is a pressure nobody asked
+   * for, and QA's job is whether a story is correct, not whether it did well.
+   * The database agrees — the policies on content_reactions and
+   * content_events name the same two roles, so hiding the panel is the
+   * convenience and RLS is the boundary.
+   */
+  seeStats: (r: Role) => r === "chief_editor" || r === "super_admin",
   manageCategories: (r: Role) => r === "chief_editor" || r === "super_admin",
   editAny: (r: Role) => r === "chief_editor" || r === "super_admin",
   /**

@@ -140,6 +140,18 @@ export interface UserPerformance {
   lastTouched: string | null;
 }
 
+/** One row of `content_stats` — engagement counted by device, not by person. */
+export interface ContentStats {
+  contentId: string;
+  likes: number;
+  dislikes: number;
+  saves: number;
+  shares: number;
+  views: number;
+  commentOpens: number;
+  lastAt: string | null;
+}
+
 export interface AuditEntry {
   id: string;
   actorId: string;

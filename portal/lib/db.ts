@@ -20,6 +20,7 @@ import type {
   CmsUser,
   ContentItem,
   ContentKind,
+  ContentStats,
   ContentStatus,
   NewsStudioArticle,
   UserPerformance,
@@ -543,6 +544,46 @@ export async function updateSelection(
     .update(row)
     .eq("article_id", articleId);
   fail("updateSelection", error);
+}
+
+// ── engagement ──────────────────────────────────────────────────────
+
+/**
+ * Reader engagement, keyed by content id.
+ *
+ * Returns an empty map rather than throwing when the caller is not allowed to
+ * see it, or when the migration has not been applied yet — the Studio worked
+ * before these numbers existed and has to keep working if they are absent.
+ * The permission itself is enforced by RLS; `can.seeStats` only decides
+ * whether we bother asking.
+ */
+export async function listContentStats(): Promise<Map<string, ContentStats>> {
+  const out = new Map<string, ContentStats>();
+  try {
+    const { data, error } = await supabase.from("content_stats").select("*");
+    if (error) {
+      // 42P01 is "relation does not exist" — the migration is not applied.
+      if (!/does not exist|permission denied/i.test(error.message)) {
+        console.warn("[stats]", error.message);
+      }
+      return out;
+    }
+    for (const r of (data ?? []) as Row[]) {
+      out.set(r.content_id as string, {
+        contentId: r.content_id as string,
+        likes: Number(r.likes ?? 0),
+        dislikes: Number(r.dislikes ?? 0),
+        saves: Number(r.saves ?? 0),
+        shares: Number(r.shares ?? 0),
+        views: Number(r.views ?? 0),
+        commentOpens: Number(r.comment_opens ?? 0),
+        lastAt: (r.last_at as string | null) ?? null,
+      });
+    }
+  } catch (e) {
+    console.warn("[stats] unreachable:", e instanceof Error ? e.message : e);
+  }
+  return out;
 }
 
 // ── audit ───────────────────────────────────────────────────────────
