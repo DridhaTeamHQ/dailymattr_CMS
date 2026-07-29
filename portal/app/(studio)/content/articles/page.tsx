@@ -24,6 +24,7 @@ import { usePageParam } from "@/lib/usePageParam";
 import {
   approveArticle,
   listContentByKind,
+  listContentStats,
   listNewsStudio,
   listNewsStudioByIds,
   listSelections,
@@ -32,6 +33,7 @@ import {
   unapproveArticle,
   updateSelection,
 } from "@/lib/db";
+import { StatsStrip } from "@/components/StatsStrip";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { ArticlesSkeleton } from "@/components/PageSkeleton";
@@ -78,15 +80,19 @@ function ArticlesTabs() {
      articles are almost never the twelve currently on screen — so they are
      fetched by id rather than looked up in the grid's page. */
   const { data, error, refetch } = useQuery(async () => {
-    const [selections, written, users] = await Promise.all([
+    /* Stats are the desk's, not the writer's — see `can.seeStats`. Asked for
+       only when they will be shown, so a writer's page doesn't spend a round
+       trip fetching numbers RLS would hand back as zeros anyway. */
+    const [selections, written, users, stats] = await Promise.all([
       listSelections(),
       listContentByKind("article"),
       listUsers(),
+      user && can.seeStats(user.role) ? listContentStats() : new Map(),
     ]);
     const feedArticles = await listNewsStudioByIds(
       selections.map((s) => s.articleId)
     );
-    return { selections, written, users, feedArticles };
+    return { selections, written, users, feedArticles, stats };
   });
 
   /* One page of the grid. Re-runs on page or search change only; useQuery
@@ -199,6 +205,7 @@ function ArticlesTabs() {
   // ── derived ─────────────────────────────────────────────────────
   const selections = data.selections;
   const written = data.written;
+  const showStats = can.seeStats(user.role);
 
   // The grid arrives already paged and searched; the feed and the drafts are
   // small enough to page in the browser. Approving can empty the last page of
@@ -644,6 +651,15 @@ function ArticlesTabs() {
                       <p className="mt-1 text-[11px] text-faint">
                         Updated {timeAgo(c.updatedAt)}
                       </p>
+                      {/* Only once it is live. An unpublished draft has no
+                          readers, so a row of zeros on one would read as
+                          indifference rather than as "not out yet". */}
+                      {showStats && c.status === "published" && (
+                        <StatsStrip
+                          stats={data.stats.get(c.id)}
+                          className="mt-1.5"
+                        />
+                      )}
                     </div>
                     <StatusPill status={c.status} />
                   </Link>
