@@ -1,11 +1,11 @@
 import {
+  EMPTY_STATS,
   getNewsStudioByIds,
   listContent,
   listContentStats,
   listSelections,
   statKey,
 } from "@/lib/db";
-import { EMPTY_STATS } from "@/components/StatsStrip";
 import type { ContentKind, ContentStats, StatsSource } from "@/lib/types";
 
 /* One list of everything readers can reach, with what they did to it.
@@ -39,6 +39,12 @@ export interface AnalyticsRow {
   stats: ContentStats;
   /** Everything that took a deliberate tap. Views are not a decision. */
   actions: number;
+  /**
+   * Whether this format has a comment thread at all. Only pipeline articles
+   * do — `app_comments` is keyed to the pipeline's own articles table — so a
+   * zero on a Pix means "nowhere to comment", not "nobody did".
+   */
+  commentsSupported: boolean;
 }
 
 export const KIND_LABEL: Record<RowKind, string> = {
@@ -49,8 +55,8 @@ export const KIND_LABEL: Record<RowKind, string> = {
   feed: "Feed",
 };
 
-const actionsOf = (s: ContentStats) =>
-  s.likes + s.dislikes + s.comments + s.saves + s.shares;
+const actionsOf = (s: ContentStats, withComments: boolean) =>
+  s.likes + s.dislikes + s.saves + s.shares + (withComments ? s.comments : 0);
 
 /**
  * Everything live, newest first, each with its numbers.
@@ -60,15 +66,18 @@ const actionsOf = (s: ContentStats) =>
  * for a role that reaches the route some other way.
  */
 export async function loadAnalytics(): Promise<AnalyticsRow[]> {
-  const [content, selections, stats] = await Promise.all([
+  const [content, selections] = await Promise.all([
     listContent(),
     listSelections(),
-    listContentStats(),
   ]);
 
-  const feedArticles = await getNewsStudioByIds(
-    selections.map((s) => s.articleId)
-  );
+  /* Both of these need the selection ids, so they wait on that one call and
+     then run together — comment counts live in DB A and are asked for by id. */
+  const feedIds = selections.map((s) => s.articleId);
+  const [feedArticles, stats] = await Promise.all([
+    getNewsStudioByIds(feedIds),
+    listContentStats(feedIds),
+  ]);
   const bySelection = new Map(selections.map((s) => [s.articleId, s]));
 
   const rows: AnalyticsRow[] = [];
@@ -87,7 +96,8 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
       meta: c.categorySlug ?? "Uncategorised",
       liveAt: c.publishedAt ?? c.updatedAt,
       stats: s,
-      actions: actionsOf(s),
+      actions: actionsOf(s, false),
+      commentsSupported: false,
     });
   }
 
@@ -106,7 +116,8 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
       // by the wire and is the date the desk actually acted on.
       liveAt: bySelection.get(a.id)?.approvedAt ?? a.publishedAt,
       stats: s,
-      actions: actionsOf(s),
+      actions: actionsOf(s, true),
+      commentsSupported: true,
     });
   }
 

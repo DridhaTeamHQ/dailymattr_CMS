@@ -1,6 +1,7 @@
 "use client";
 
 import { Bookmark, Eye, Heart, MessageCircle, Share2, ThumbsDown } from "lucide-react";
+import { EMPTY_STATS } from "@/lib/db";
 import type { ContentStats } from "@/lib/types";
 
 /* What readers did with a story.
@@ -20,45 +21,38 @@ import type { ContentStats } from "@/lib/types";
 export const fmt = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n);
 
-/* No row means nothing has happened yet, which is a real answer and reads
-   better as zeros than as an absence. A story published a minute ago has no
-   numbers; so does one nobody opened, and the difference is the timestamp.
-   The view is built from the engagement tables rather than from the content,
-   so untouched items have no row at all — this is the common case, not an
-   error case. */
-export const EMPTY_STATS: ContentStats = {
-  source: "cms",
-  contentId: "",
-  likes: 0,
-  dislikes: 0,
-  saves: 0,
-  shares: 0,
-  views: 0,
-  commentOpens: 0,
-  comments: 0,
-  sourceOpens: 0,
-  lastAt: null,
-};
 
 export function StatsStrip({
   stats,
   className = "",
+  commentsSupported = true,
 }: {
   stats: ContentStats | undefined;
   className?: string;
+  /**
+   * False for Pix, Qix, Trax and desk-written articles. `app_comments` is
+   * keyed to the pipeline's own articles table, so those formats have no
+   * thread in the app at all — a zero there would be read as "nobody said
+   * anything" when the truth is there was nowhere to say it.
+   */
+  commentsSupported?: boolean;
 }) {
   const s = stats ?? EMPTY_STATS;
 
   /* The speech bubble counts comments written, not the panel being opened.
-     It used to be the latter, and a story someone had commented on read as
-     zero — which is worse than showing nothing, because it looked like an
-     answer. Opens are still collected and shown on the detail page, where
-     there is room to say which is which. */
-  const items: [typeof Eye, number, string][] = [
+     It was the latter for a while, and a story someone had commented on read
+     as zero — worse than showing nothing, because it looked like an answer.
+     The number now comes from `app_comments` itself, so it includes everything
+     said before any of this was instrumented. Opens are still collected and
+     shown on the detail page, where there is room to say which is which.
+
+     `null` means the format has no thread at all, which is a different fact
+     from nobody having spoken. */
+  const items: [typeof Eye, number | null, string][] = [
     [Eye, s.views, "Opened"],
     [Heart, s.likes, "Liked"],
     [ThumbsDown, s.dislikes, "Disliked"],
-    [MessageCircle, s.comments, "Comments written"],
+    [MessageCircle, commentsSupported ? s.comments : null, "Comments written"],
     [Bookmark, s.saves, "Saved"],
     [Share2, s.shares, "Shared"],
   ];
@@ -71,13 +65,16 @@ export function StatsStrip({
       {items.map(([Icon, n, label]) => (
         <span
           key={label}
-          aria-label={`${label}: ${n}`}
+          aria-label={n === null ? `${label}: not available` : `${label}: ${n}`}
+          title={
+            n === null ? "This format has no comment thread in the app." : label
+          }
           className={`flex items-center gap-1 text-[11px] font-semibold tabular-nums ${
-            n > 0 ? "text-ink" : "text-faint"
+            n && n > 0 ? "text-ink" : "text-faint"
           }`}
         >
           <Icon size={11} aria-hidden />
-          {fmt(n)}
+          {n === null ? "—" : fmt(n)}
         </span>
       ))}
     </div>

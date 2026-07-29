@@ -85,11 +85,15 @@ export default function AnalyticsDetailPage() {
 
   const s = row.stats;
 
-  const primary: [typeof Eye, string, number][] = [
+  const primary: [typeof Eye, string, number | null][] = [
     [Eye, "Opened", s.views],
     [Heart, "Liked", s.likes],
     [ThumbsDown, "Disliked", s.dislikes],
-    [MessageCircle, "Comments written", s.comments],
+    [
+      MessageCircle,
+      "Comments written",
+      row.commentsSupported ? s.comments : null,
+    ],
     [Bookmark, "Saved", s.saves],
     [Share2, "Shared", s.shares],
   ];
@@ -115,7 +119,7 @@ export default function AnalyticsDetailPage() {
     ["Shared", pct(s.shares, s.views), "of everyone who opened it"],
     [
       "Joined the conversation",
-      pct(s.comments, s.commentOpens),
+      row.commentsSupported ? pct(s.comments, s.commentOpens) : "—",
       "of everyone who opened the comments",
     ],
   ];
@@ -161,10 +165,17 @@ export default function AnalyticsDetailPage() {
         {primary.map(([Icon, label, n]) => (
           <div key={label} className="card p-4">
             <Icon size={14} className="mb-2 text-faint" />
-            <div className="text-2xl font-extrabold tabular-nums">{fmt(n)}</div>
+            <div className="text-2xl font-extrabold tabular-nums">
+              {n === null ? "—" : fmt(n)}
+            </div>
             <div className="mt-0.5 text-[11px] font-semibold text-muted">
               {label}
             </div>
+            {n === null && (
+              <p className="mt-1 text-[10px] text-faint">
+                No comment thread on this format.
+              </p>
+            )}
           </div>
         ))}
       </div>

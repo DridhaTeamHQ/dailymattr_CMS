@@ -88,7 +88,11 @@ function ArticlesTabs() {
       listSelections(),
       listContentByKind("article"),
       listUsers(),
-      user && can.seeStats(user.role) ? listContentStats() : new Map(),
+      user && can.seeStats(user.role)
+        ? listSelections().then((sel) =>
+            listContentStats(sel.map((s) => s.articleId))
+          )
+        : new Map(),
     ]);
     const feedArticles = await listNewsStudioByIds(
       selections.map((s) => s.articleId)
@@ -680,6 +684,7 @@ function ArticlesTabs() {
                       {showStats && c.status === "published" && (
                         <StatsStrip
                           stats={data.stats.get(statKey("cms", c.id))}
+                          commentsSupported={false}
                           className="mt-1.5"
                         />
                       )}

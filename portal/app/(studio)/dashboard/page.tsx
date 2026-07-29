@@ -25,7 +25,7 @@ import { StatsStrip } from "@/components/StatsStrip";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { DashboardSkeleton } from "@/components/PageSkeleton";
-import { type ContentKind } from "@/lib/types";
+import { type ContentKind, type ContentStats } from "@/lib/types";
 
 const KINDS: ContentKind[] = ["article", "pix", "qix", "trax"];
 
@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const { data, error } = useQuery(async () => {
     // All four queries fire in parallel — no waiting for selections before
     // fetching newsstudio. The join happens client-side after everything lands.
-    const [content, audit, selectionsAndNews, engagement] = await Promise.all([
+    const [content, audit, selectionsAndNews] = await Promise.all([
       listContent(),
       listAudit(40),
       // Selections + their NewsStudio articles: selections is fast (tiny table)
@@ -45,10 +45,19 @@ export default function DashboardPage() {
         );
         return { selections, newsstudio };
       }),
-      /* Only for the two roles allowed to see it. RLS would hand a writer
-         zeros anyway, so asking would be a round trip that buys nothing. */
-      user && can.seeStats(user.role) ? listContentStats() : new Map(),
     ]);
+
+    /* After selections rather than beside them: comment counts come from DB A
+       and have to be asked for by id, so this one genuinely needs the list
+       first. Only for the two roles allowed to see it — RLS would hand a
+       writer zeros anyway, so asking would be a round trip that buys nothing. */
+    const engagement =
+      user && can.seeStats(user.role)
+        ? await listContentStats(
+            selectionsAndNews.selections.map((s) => s.articleId)
+          )
+        : new Map<string, ContentStats>();
+
     return {
       content,
       audit,

@@ -572,7 +572,9 @@ export const statKey = (source: StatsSource, id: string) => `${source}:${id}`;
  * the engagement tables rather than from the content. Callers render a missing
  * entry as zeros, which is the same answer with less to carry over the wire.
  */
-export async function listContentStats(): Promise<Map<string, ContentStats>> {
+export async function listContentStats(
+  pipelineIds: string[] = []
+): Promise<Map<string, ContentStats>> {
   const out = new Map<string, ContentStats>();
   try {
     const { data, error } = await supabase.from("content_stats").select("*");
@@ -601,6 +603,92 @@ export async function listContentStats(): Promise<Map<string, ContentStats>> {
     }
   } catch (e) {
     console.warn("[stats] unreachable:", e instanceof Error ? e.message : e);
+  }
+
+  /* Comments come from the table that holds them, not from a tally we keep
+     alongside it.
+
+     They were briefly counted as an event the app emitted on each successful
+     post, which meant the number only ever started at whenever the app build
+     shipped — comments written before that were invisible, and a comment later
+     deleted stayed counted forever. `app_comments` in DB A is the real answer
+     and has been all along, so ask it. */
+  const counts = await listCommentCounts(pipelineIds);
+  for (const [id, n] of counts) {
+    const key = statKey("pipeline", id);
+    const row = out.get(key);
+    if (row) {
+      row.comments = n;
+    } else {
+      // Commented on but otherwise untouched: no engagement row exists, and a
+      // comment is still something worth showing.
+      out.set(key, {
+        ...EMPTY_STATS,
+        source: "pipeline",
+        contentId: id,
+        comments: n,
+      });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * No row means nothing has happened yet, which is a real answer and reads
+ * better as zeros than as an absence. The view is built from the engagement
+ * tables rather than from the content, so untouched items have no row at all —
+ * the common case, not an error case.
+ */
+export const EMPTY_STATS: ContentStats = {
+  source: "cms",
+  contentId: "",
+  likes: 0,
+  dislikes: 0,
+  saves: 0,
+  shares: 0,
+  views: 0,
+  commentOpens: 0,
+  comments: 0,
+  sourceOpens: 0,
+  lastAt: null,
+};
+
+/**
+ * How many comments each article actually has, straight from DB A.
+ *
+ * Only pipeline articles can be commented on — `commentsSupported` in the
+ * app's lib/comments refuses CMS ids, because `app_comments.article_id` is a
+ * uuid keyed to the pipeline's own articles table. So a Pix or a Qix showing
+ * zero here is not indifference, it is a format with no thread, and the strip
+ * says so rather than printing a nought.
+ *
+ * Resolves empty when DB A is not configured, rather than taking the page down
+ * with it — the rest of the numbers are still worth showing.
+ */
+export async function listCommentCounts(
+  ids: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const valid = [...new Set(ids)].filter((id) => UUID_RE.test(id));
+  if (!newsstudio || valid.length === 0) return out;
+
+  const CHUNK = 200;
+  try {
+    for (let i = 0; i < valid.length; i += CHUNK) {
+      const { data, error } = await newsstudio.rpc("app_comment_counts", {
+        p_ids: valid.slice(i, i + CHUNK),
+      });
+      if (error) {
+        console.warn("[comments]", error.message);
+        return out;
+      }
+      for (const r of (data ?? []) as { article_id: string; n: number }[]) {
+        out.set(r.article_id, Number(r.n ?? 0));
+      }
+    }
+  } catch (e) {
+    console.warn("[comments] unreachable:", e instanceof Error ? e.message : e);
   }
   return out;
 }

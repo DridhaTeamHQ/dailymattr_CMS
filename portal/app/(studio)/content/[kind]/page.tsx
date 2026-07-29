@@ -432,6 +432,7 @@ function KindList() {
                     {showStats && c.status === "published" && (
                       <StatsStrip
                         stats={stats.get(statKey("cms", c.id))}
+                        commentsSupported={false}
                         className="mt-1.5 justify-center px-1"
                       />
                     )}
