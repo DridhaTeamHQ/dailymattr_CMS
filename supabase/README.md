@@ -27,7 +27,7 @@ Run in this order against a fresh project (they are already applied to
 | 8 | `seed_auth_users_for_demo` | Real `auth.users` rows for the demo logins |
 | 9 | `move_helpers_to_private_schema` | Moves policy helpers into `private` so PostgREST can't expose them |
 | 10 | `10_engagement` | `content_reactions`, `content_events`, the `content_stats` view, and the two RPCs the app writes through. Read access is limited to `super_admin` and `chief_editor`; the app writes as `anon` through security-definer functions rather than touching the tables. |
-| 11 | `11_engagement_pipeline` | **Not applied yet.** Lets engagement cover NewsStudio articles as well as CMS content: drops the `content_items` foreign key, adds a `source` column, and re-keys the view and RPCs on `(source, content_id)`. The published-only guard survives as `private.engageable` — CMS ids must be published, pipeline ids must appear in `article_selections`. |
+| 11 | `11_engagement_pipeline` | Lets engagement cover NewsStudio articles as well as CMS content: drops the `content_items` foreign key, adds a `source` column, and re-keys the view and RPCs on `(source, content_id)`. The published-only guard survives as `private.engageable` — CMS ids must be published, pipeline ids must appear in `article_selections`. |
 
 ### Two linter warnings that are the design
 
