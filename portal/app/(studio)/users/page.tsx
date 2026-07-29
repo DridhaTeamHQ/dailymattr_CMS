@@ -9,6 +9,7 @@ import TeamChart from "@/components/TeamChart";
 import { Avatar, Modal, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
+import { supabase } from "@/lib/supabase";
 import {
   inviteUser,
   listPerformance,
@@ -22,6 +23,9 @@ import { ROLE_META, type Role } from "@/lib/types";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
 
+/** Kept in step with the same floor in app/api/users/route.ts. */
+const MIN_PASSWORD = 10;
+
 type Tab = "performance" | "access";
 
 export default function UsersPage() {
@@ -31,7 +35,12 @@ export default function UsersPage() {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("performance");
-  const [form, setForm] = useState({ name: "", email: "", role: "writer" as Role });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "writer" as Role,
+  });
 
   useEffect(() => {
     if (user && !can.manageUsers(user.role)) router.replace("/dashboard");
@@ -135,31 +144,91 @@ export default function UsersPage() {
 
   const invite = async () => {
     if (!form.name || !form.email || busy) return;
+    if (form.password.length < MIN_PASSWORD) {
+      toast.error(`The password needs at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
     setBusy(true);
     try {
       const name = form.name;
-      const ok = await toast.run(
-        async () => {
-          await inviteUser({
-            email: form.email,
-            fullName: name,
-            role: form.role,
-            languages: ["en"],
-            states: [],
-            isActive: true,
-            avatarHue: Math.floor(Math.random() * 360),
-          });
-          await logAudit(user, "invited", "user", name);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Your session expired — sign in again.");
+        return;
+      }
+
+      // The server creates the login; a browser cannot, which is why adding
+      // someone used to leave them unable to sign in.
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
-        {
-          success: `${name} added — now create their login in Supabase Auth`,
-          error: `Couldn't add ${name}`,
+        body: JSON.stringify({
+          email: form.email,
+          fullName: name,
+          role: form.role,
+          password: form.password,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // A deployment without the service-role key can still record the
+        // profile — better a half-finished member than a dead button — but it
+        // has to say plainly that the login is still missing.
+        if (payload?.code === "not_configured") {
+          const saved = await toast.run(
+            async () => {
+              await inviteUser({
+                email: form.email,
+                fullName: name,
+                role: form.role,
+                languages: ["en"],
+                states: [],
+                isActive: true,
+                avatarHue: Math.floor(Math.random() * 360),
+              });
+              await logAudit(user, "invited", "user", name);
+            },
+            {
+              success: `${name}'s profile saved — but they still cannot sign in`,
+              error: `Couldn't add ${name}`,
+            }
+          );
+          if (saved)
+            toast.info({
+              message: "No login was created",
+              detail:
+                "SUPABASE_SERVICE_ROLE_KEY is not set on the server, so create their login in Supabase → Authentication → Users.",
+            });
+          if (!saved) return;
+        } else {
+          toast.error({
+            message: `Couldn't add ${name}`,
+            detail: payload?.error ?? `The server said ${res.status}.`,
+          });
+          return;
         }
-      );
-      if (!ok) return;
+      } else {
+        await logAudit(user, "invited", "user", name);
+        toast.success({
+          message: `${name} can sign in now`,
+          detail: `${form.email} · ${ROLE_META[form.role].label}`,
+        });
+      }
+
       setAdding(false);
-      setForm({ name: "", email: "", role: "writer" });
+      setForm({ name: "", email: "", password: "", role: "writer" });
       refetch();
+    } catch (e) {
+      toast.error({
+        message: `Couldn't add ${form.name}`,
+        detail: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setBusy(false);
     }
@@ -343,30 +412,47 @@ export default function UsersPage() {
               ))}
             </select>
           </div>
+          <div>
+            <div className="label mb-2">Temporary password</div>
+            <input
+              className="field"
+              type="text"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={`At least ${MIN_PASSWORD} characters`}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {/* Deliberately not a masked field. It is being read out or pasted
+                into a message, not typed from memory, and hiding it only
+                invites typos in a password someone else has to use. */}
+            <p className="mt-1.5 text-[11px] text-faint">
+              Share this with them and ask them to change it after signing in.
+            </p>
+          </div>
+
           <button
             onClick={invite}
-            disabled={!form.name || !form.email || busy}
+            disabled={
+              !form.name ||
+              !form.email ||
+              form.password.length < MIN_PASSWORD ||
+              busy
+            }
             className="btn-accent w-full py-3 text-sm disabled:opacity-40"
           >
-            {busy ? "Adding…" : "Add to team"}
+            {busy ? "Creating account…" : "Add to team"}
           </button>
           {/* Honest about the gap: this writes the Studio profile, but the
               sign-in account is created separately in Supabase Auth — a browser
               cannot create one, that needs the admin API. Spelled out as steps
               because "created separately" read as a footnote, and people added
               here were left with a profile and no way in. */}
-          <div className="space-y-1.5 rounded-xl bg-canvas p-3 text-[11px] leading-relaxed text-muted">
-            <p className="font-bold text-ink">This does not create their login</p>
-            <p>
-              It saves their Studio profile and role. To let them in, open
-              Supabase → Authentication → Users → <b>Add user</b>, and use the
-              same email address.
-            </p>
-            <p className="text-faint">
-              Their role here is kept — signing in adopts this profile rather
-              than replacing it.
-            </p>
-          </div>
+          <p className="text-[11px] leading-relaxed text-faint">
+            This creates their sign-in account and their Studio profile
+            together, so they can sign in straight away with the email and
+            password above.
+          </p>
         </div>
       </Modal>
     </div>

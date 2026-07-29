@@ -201,6 +201,78 @@ async function main() {
     check("rate limits a burst", sawLimit, "26 requests without a 429");
   }
 
+  // ── /api/users (creates sign-in accounts) ─────────────────────────
+  //
+  // The route holds the service-role key, so the gate matters more here than
+  // anywhere else: unauthenticated callers must not reach it, and must not
+  // learn anything about how the server is configured.
+  console.log("\n/api/users");
+  {
+    const body = {
+      email: "probe@example.com",
+      fullName: "Probe",
+      role: "writer",
+      password: "abcdefghij",
+    };
+    const bearer = { Authorization: "Bearer not-a-real-token" };
+    // A fresh forwarded address per case, or the rate limiter answers first.
+    const ip = (n) => ({ "X-Forwarded-For": `203.0.113.${n}` });
+
+    check(
+      "refuses a request with no token",
+      (await post("/api/users", body, ip(10))).status === 401
+    );
+    {
+      // The config check must sit behind the auth check.
+      const r = await post("/api/users", body, ip(11));
+      check(
+        "tells an anonymous caller nothing about server config",
+        r.status === 401 && !JSON.stringify(r.json ?? {}).includes("SERVICE_ROLE"),
+        `status ${r.status}`
+      );
+    }
+    check(
+      "rejects a malformed body",
+      (await post("/api/users", "notjson", { ...bearer, ...ip(12) })).status === 400
+    );
+    check(
+      "rejects an invalid email",
+      (await post("/api/users", { ...body, email: "nope" }, { ...bearer, ...ip(13) }))
+        .status === 400
+    );
+    check(
+      "rejects an unknown role",
+      (await post("/api/users", { ...body, role: "root" }, { ...bearer, ...ip(14) }))
+        .status === 400
+    );
+    check(
+      "rejects a short password",
+      (await post("/api/users", { ...body, password: "short" }, { ...bearer, ...ip(15) }))
+        .status === 400
+    );
+    {
+      // 501 where the key is absent, 401/403 where it is present and the token
+      // is rubbish. Never 200 for a token that was never issued.
+      const r = await post("/api/users", body, { ...bearer, ...ip(16) });
+      check(
+        "never creates an account for a forged token",
+        [401, 403, 501].includes(r.status),
+        `status ${r.status}`
+      );
+    }
+    {
+      let sawLimit = false;
+      for (let i = 0; i < 9 && !sawLimit; i++) {
+        const r = await post("/api/users", body, {
+          ...bearer,
+          "X-Forwarded-For": "203.0.113.99",
+        });
+        if (r.status === 429) sawLimit = true;
+      }
+      check("rate limits a burst", sawLimit, "9 requests without a 429");
+    }
+  }
+
   // ── /api/media/[filename] ─────────────────────────────────────────
   console.log("\n/api/media/[filename]");
   for (const attempt of [
