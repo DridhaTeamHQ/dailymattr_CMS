@@ -27,6 +27,7 @@ import { TraxCard } from "@/components/TraxCard";
 import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import {
@@ -90,6 +91,7 @@ function KindList() {
   const { kind: raw } = useParams<{ kind: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const toast = useToast();
   const kind = VALID.includes(raw as ContentKind) ? (raw as ContentKind) : null;
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -182,12 +184,23 @@ function KindList() {
   const publisher = can.publish(user.role);
 
   const act = async (id: string, status: ContentStatus, n?: string) => {
-    try {
-      await setContentStatus(id, status, user, n);
-    } catch (e) {
-      // The publish trigger can refuse — show why rather than failing silently.
-      alert(e instanceof Error ? e.message : String(e));
-    }
+    const item = rows.find((c) => c.id === id);
+    const what = item ? `"${item.title}"` : "That item";
+    const said: Record<string, string> = {
+      draft: `${what} moved back to drafts`,
+      in_review: `${what} sent for review`,
+      approved: `${what} cleared review`,
+      published: `${what} is live in the app`,
+      rejected: `${what} sent back to the writer`,
+    };
+
+    // The publish trigger can refuse, and its message names the rule. That used
+    // to arrive as a browser alert(), which blocks the page and reads like a
+    // crash rather than a decision.
+    await toast.run(() => setContentStatus(id, status, user, n), {
+      success: said[status] ?? `${what} updated`,
+      error: `Couldn't update ${what}`,
+    });
     // A status change moves an item between tabs, so the counts move too.
     refetch();
   };
@@ -730,14 +743,16 @@ function KindList() {
              an admin's to remove. PostgREST answers a filtered-out delete with
              success and zero rows, so without this the dialog would close on a
              row that is still there. */
-          try {
-            await deleteContent(id, user);
-            setDeleteId(null);
-            setPreviewId((p) => (p === id ? null : p));
-            refetch();
-          } catch (e) {
-            alert(e instanceof Error ? e.message : String(e));
-          }
+          const item = rows.find((c) => c.id === id);
+          const what = item ? `"${item.title}"` : "That item";
+          const ok = await toast.run(() => deleteContent(id, user), {
+            success: `${what} deleted`,
+            error: `Couldn't delete ${what}`,
+          });
+          if (!ok) return;
+          setDeleteId(null);
+          setPreviewId((p) => (p === id ? null : p));
+          refetch();
         }}
       />
     </div>

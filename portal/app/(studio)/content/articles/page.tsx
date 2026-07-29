@@ -18,6 +18,7 @@ import NewsVisual from "@/components/NewsVisual";
 import { Pager } from "@/components/Pager";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import {
@@ -53,6 +54,7 @@ export default function ArticlesPage() {
 
 function ArticlesTabs() {
   const { user } = useAuth();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("newsstudio");
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -126,13 +128,20 @@ function ArticlesTabs() {
   const approve = async (art: NewsStudioArticle) => {
     if (!approver) return;
     if (data?.selections.some((s) => s.articleId === art.id)) return;
-    await approveArticle(art.id, user, art.title);
+    await toast.run(() => approveArticle(art.id, user, art.title), {
+      // Feed order is approval order, so say where it landed.
+      success: `Added to the app feed — position ${(data?.selections.length ?? 0) + 1}`,
+      error: "Couldn't add that to the feed",
+    });
     refresh();
   };
 
   const unapprove = async (art: NewsStudioArticle) => {
     if (!approver) return;
-    await unapproveArticle(art.id, user, art.title);
+    await toast.run(() => unapproveArticle(art.id, user, art.title), {
+      success: "Removed from the app feed",
+      error: "Couldn't remove that from the feed",
+    });
     refresh();
   };
 
@@ -146,9 +155,18 @@ function ArticlesTabs() {
     if (!approver) return;
     const sel = data?.selections.find((s) => s.articleId === art.id);
     if (!sel) return approve(art);
-    await updateSelection(art.id, { isFeatured: !sel.isFeatured });
-    if (!sel.isFeatured)
-      await logAudit(user, "featured", "newsstudio article", art.title);
+    const featuring = !sel.isFeatured;
+    await toast.run(
+      async () => {
+        await updateSelection(art.id, { isFeatured: featuring });
+        if (featuring)
+          await logAudit(user, "featured", "newsstudio article", art.title);
+      },
+      {
+        success: featuring ? "Featured in the app" : "No longer featured",
+        error: "Couldn't change that",
+      }
+    );
     refresh();
   };
 
@@ -160,8 +178,21 @@ function ArticlesTabs() {
       imageOverride: string | null;
     }
   ) => {
-    await updateSelection(art.id, patch);
-    await logAudit(user, "edited app copy for", "newsstudio article", art.title);
+    await toast.run(
+      async () => {
+        await updateSelection(art.id, patch);
+        await logAudit(
+          user,
+          "edited app copy for",
+          "newsstudio article",
+          art.title
+        );
+      },
+      {
+        success: "App copy saved",
+        error: "That copy didn't save",
+      }
+    );
     refresh();
   };
 

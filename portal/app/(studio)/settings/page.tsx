@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Plus, Trash2 } from "lucide-react";
 import { Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import {
   addCategory,
   listCategories,
@@ -18,6 +19,7 @@ import { SettingsSkeleton } from "@/components/PageSkeleton";
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [name, setName] = useState("");
   const { data: categories, error, refetch } = useQuery(() => listCategories());
 
@@ -32,14 +34,25 @@ export default function SettingsPage() {
 
   const add = async () => {
     if (!name.trim() || !manager) return;
-    await addCategory({
-      slug: slugify(name),
-      name: name.trim(),
-      kind: null,
-      sortOrder: categories.length + 1,
-      isActive: true,
-    });
-    await logAudit(user, "added category", "category", name.trim());
+    const label = name.trim();
+    const ok = await toast.run(
+      async () => {
+        await addCategory({
+          slug: slugify(label),
+          name: label,
+          kind: null,
+          sortOrder: categories.length + 1,
+          isActive: true,
+        });
+        await logAudit(user, "added category", "category", label);
+      },
+      {
+        success: `"${label}" added`,
+        // A duplicate slug is the usual cause, and the database says so.
+        error: `Couldn't add "${label}"`,
+      }
+    );
+    if (!ok) return;
     setName("");
     refetch();
   };
@@ -48,14 +61,27 @@ export default function SettingsPage() {
     if (!manager) return;
     const c = categories.find((x) => x.slug === slug);
     if (!c) return;
-    await setCategoryActive(slug, !c.isActive);
-    refetch();
+    const ok = await toast.run(
+      () => setCategoryActive(slug, !c.isActive),
+      {
+        success: c.isActive
+          ? `"${c.name}" hidden from editors`
+          : `"${c.name}" is available again`,
+        error: `Couldn't change "${c.name}"`,
+      }
+    );
+    if (ok) refetch();
   };
 
   const remove = async (slug: string) => {
     if (!manager) return;
-    await removeCategory(slug);
-    refetch();
+    const c = categories.find((x) => x.slug === slug);
+    const ok = await toast.run(() => removeCategory(slug), {
+      success: `"${c?.name ?? slug}" deleted`,
+      // Content still filed under it will hold the row via a foreign key.
+      error: `Couldn't delete "${c?.name ?? slug}"`,
+    });
+    if (ok) refetch();
   };
 
   return (

@@ -11,6 +11,7 @@ import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SummaryAudioConverter } from "@/components/SummaryAudioConverter";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { isMediaFile, mediaBlocker, rehostable } from "@/lib/media";
 import {
   createContent,
@@ -72,6 +73,7 @@ const emptyItem = (kind: ContentKind, userId: string): ContentItem => ({
 
 export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const { user } = useAuth();
+  const toast = useToast();
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get("id");
@@ -135,19 +137,24 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             ? (data.sizeBytes / 1_048_576).toFixed(1)
             : null;
           const shape = data.isVertical === false ? " — landscape, not 9:16" : "";
-          setScrapeMsg(
-            `Imported${data.uploader ? ` from ${data.uploader}` : ""}${mb ? ` · ${mb} MB` : ""}${shape}`
-          );
+          const line = `Imported${data.uploader ? ` from ${data.uploader}` : ""}${mb ? ` · ${mb} MB` : ""}${shape}`;
+          setScrapeMsg(line);
+          // An import runs for a minute or more; whoever started it has very
+          // likely scrolled away from the field by the time it lands.
+          toast.success({ message: "Video imported", detail: line });
         }
         else
           setScrapeErr(
             data.notice ?? "Only the title and thumbnail could be imported."
           );
       } else {
-        setScrapeErr(data.error || "Failed to scrape video URL.");
+        const why = data.error || "Failed to scrape video URL.";
+        setScrapeErr(why);
+        toast.error({ message: "Video import failed", detail: why });
       }
-    } catch (err: any) {
+    } catch {
       setScrapeErr("Error connecting to scraper service.");
+      toast.error("Couldn't reach the video importer");
     } finally {
       setScraping(false);
     }
@@ -283,21 +290,40 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
       if (submit) {
         await setContentStatus(stored.id, "in_review", user);
         setSaved("review");
+        toast.success(`"${stored.title || "Untitled"}" sent for review`);
         setTimeout(() => router.push(listHref), 700);
       } else {
         // A correction to a live story is not "saved draft" — the trail has to
         // read clearly when someone asks who changed what readers saw.
+        const live = stored.status === "published";
         await logAudit(
           user,
-          stored.status === "published" ? "updated the live" : "saved draft",
+          live ? "updated the live" : "saved draft",
           kind,
           stored.title || "(untitled)"
         );
         setSaved("draft");
+        // Editing something readers are already looking at deserves saying so
+        // out loud, not the same quiet tick as a draft.
+        toast.success(
+          live
+            ? {
+                message: "Live story updated",
+                detail: "Readers see this change now.",
+              }
+            : "Draft saved"
+        );
         setTimeout(() => setSaved(null), 1600);
       }
     } catch (e) {
-      setSaveErr(e instanceof Error ? e.message : String(e));
+      const why = e instanceof Error ? e.message : String(e);
+      setSaveErr(why);
+      // Kept inline as well: the toast can be dismissed or missed, and this one
+      // means the writing in front of them is not in the database.
+      toast.error({
+        message: submit ? "Couldn't submit for review" : "Nothing was saved",
+        detail: why,
+      });
     } finally {
       setSaving(false);
     }

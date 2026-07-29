@@ -9,6 +9,7 @@ import { PixFrame } from "@/components/PixCard";
 import ReviewEditModal from "@/components/ReviewEditModal";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import { filledPixPoints } from "@/lib/pix";
@@ -109,6 +110,7 @@ export default function ReviewPage() {
 
 function ReviewQueue() {
   const { user } = useAuth();
+  const toast = useToast();
   const router = useRouter();
   const [tick, setTick] = useState(0);
   const [rejecting, setRejecting] = useState<string | null>(null);
@@ -155,12 +157,21 @@ function ReviewQueue() {
     status: "approved" | "published" | "rejected",
     n?: string
   ) => {
-    try {
-      await setContentStatus(id, status, user, n);
-    } catch (e) {
-      // The database has the final say on publishing — surface its refusal.
-      alert(e instanceof Error ? e.message : String(e));
-    }
+    const item = [...data.queue, ...data.approved].find((c) => c.id === id);
+    const what = item ? `"${item.title}"` : "That item";
+    const said = {
+      approved: `${what} cleared review`,
+      published: `${what} is live in the app`,
+      rejected: `${what} sent back to the writer`,
+    }[status];
+
+    // The database has the final say on publishing, and its refusal names the
+    // rule — that used to arrive as a browser alert(), which blocks the page
+    // and reads like a crash.
+    await toast.run(() => setContentStatus(id, status, user, n), {
+      success: said,
+      error: `Couldn't update ${what}`,
+    });
     refetch();
   };
 
@@ -271,8 +282,13 @@ function ReviewQueue() {
         canEdit={can.editInReview(user.role)}
         onClose={() => setPreviewId(null)}
         onSave={async (id, patch) => {
-          const saved = await updateContent(id, patch);
-          await logAudit(user, "edited in review", saved.kind, saved.title);
+          await toast.run(
+            async () => {
+              const saved = await updateContent(id, patch);
+              await logAudit(user, "edited in review", saved.kind, saved.title);
+            },
+            { success: "Changes saved", error: "Those changes didn't save" }
+          );
           refetch();
         }}
         actions={

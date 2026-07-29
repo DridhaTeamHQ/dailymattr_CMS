@@ -10,6 +10,7 @@ import {
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { THEME_BOOTSTRAP, ThemeProvider } from "@/lib/theme";
+import { ToastProvider } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -87,7 +88,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-full font-sans">
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          {/* Above AuthProvider so sign-in and sign-out can announce
+              themselves too, not only what happens once inside. */}
+          <ToastProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -11,6 +11,7 @@ import {
 } from "@/lib/pix";
 import type { ImageSuggestion } from "@/lib/pixImageSearch";
 import { COVERS, UploadError, uploadBlob } from "@/lib/storage";
+import { useToast } from "@/lib/toast";
 import {
   useCallback,
   useEffect,
@@ -158,6 +159,7 @@ export default function PixComposer({
   onCommit: (coverUrl: string, masterUrl: string | null) => void;
   disabled?: boolean;
 }) {
+  const toast = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [draft, setDraft] = useState<PixComposerState>(defaultComposerState);
   const [loaded, setLoaded] = useState<{
@@ -463,15 +465,18 @@ export default function PixComposer({
 
       setExported(displayUrl);
       onCommit(displayUrl, masterUrl);
-      setExportNote(
-        `Committed — master ${master.width} × ${master.height} PNG, ${Math.round(master.blob.size / 1024)} KB`
-      );
+      const note = `Committed — master ${master.width} × ${master.height} PNG, ${Math.round(master.blob.size / 1024)} KB`;
+      setExportNote(note);
+      // Committing is a save, and the only visible sign of it was a line of
+      // small text beside the canvas.
+      toast.success({ message: "Poster committed", detail: note });
     } catch (e) {
-      setImgError(
+      const why =
         e instanceof UploadError
           ? `Upload failed: ${e.message}`
-          : "Could not commit the poster."
-      );
+          : "Could not commit the poster.";
+      setImgError(why);
+      toast.error({ message: "Poster not committed", detail: why });
     } finally {
       setBusy(false);
     }

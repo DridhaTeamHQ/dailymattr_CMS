@@ -8,6 +8,7 @@ import PerformanceCard from "@/components/PerformanceCard";
 import TeamChart from "@/components/TeamChart";
 import { Avatar, Modal, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import {
   inviteUser,
   listPerformance,
@@ -25,6 +26,7 @@ type Tab = "performance" | "access";
 
 export default function UsersPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -86,38 +88,75 @@ export default function UsersPage() {
   const toggleActive = async (id: string) => {
     const u = users.find((x) => x.id === id);
     if (!u || u.id === user.id) return;
-    await updateUser(id, { isActive: !u.isActive });
-    await logAudit(
-      user,
-      !u.isActive ? "reactivated" : "deactivated",
-      "user",
-      u.fullName
+    const reactivating = !u.isActive;
+    const ok = await toast.run(
+      async () => {
+        await updateUser(id, { isActive: reactivating });
+        await logAudit(
+          user,
+          reactivating ? "reactivated" : "deactivated",
+          "user",
+          u.fullName
+        );
+      },
+      {
+        success: reactivating
+          ? `${u.fullName} can sign in again`
+          : `${u.fullName} can no longer sign in`,
+        error: `Couldn't change ${u.fullName}'s access`,
+      }
     );
-    refetch();
+    if (ok) refetch();
   };
 
   const setRole = async (id: string, role: Role) => {
     const u = users.find((x) => x.id === id);
     if (!u || u.id === user.id) return;
-    await updateUser(id, { role });
-    await logAudit(user, `set role ${ROLE_META[role].label}`, "user", u.fullName);
+    const ok = await toast.run(
+      async () => {
+        await updateUser(id, { role });
+        await logAudit(
+          user,
+          `set role ${ROLE_META[role].label}`,
+          "user",
+          u.fullName
+        );
+      },
+      {
+        success: `${u.fullName} is now ${ROLE_META[role].label}`,
+        error: `Couldn't change ${u.fullName}'s role`,
+      }
+    );
+    // Refetch either way: on failure the select has already moved, and the
+    // reload is what puts it back to the role the database still holds.
     refetch();
+    return ok;
   };
 
   const invite = async () => {
     if (!form.name || !form.email || busy) return;
     setBusy(true);
     try {
-      await inviteUser({
-        email: form.email,
-        fullName: form.name,
-        role: form.role,
-        languages: ["en"],
-        states: [],
-        isActive: true,
-        avatarHue: Math.floor(Math.random() * 360),
-      });
-      await logAudit(user, "invited", "user", form.name);
+      const name = form.name;
+      const ok = await toast.run(
+        async () => {
+          await inviteUser({
+            email: form.email,
+            fullName: name,
+            role: form.role,
+            languages: ["en"],
+            states: [],
+            isActive: true,
+            avatarHue: Math.floor(Math.random() * 360),
+          });
+          await logAudit(user, "invited", "user", name);
+        },
+        {
+          success: `${name} added — now create their login in Supabase Auth`,
+          error: `Couldn't add ${name}`,
+        }
+      );
+      if (!ok) return;
       setAdding(false);
       setForm({ name: "", email: "", role: "writer" });
       refetch();
