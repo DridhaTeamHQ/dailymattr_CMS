@@ -143,11 +143,26 @@ export default function UsersPage() {
   };
 
   const invite = async () => {
-    if (!form.name || !form.email || busy) return;
-    if (form.password.length < MIN_PASSWORD) {
-      toast.error(`The password needs at least ${MIN_PASSWORD} characters.`);
+    if (busy) return;
+
+    // Say what is missing rather than sitting there greyed out. Every one of
+    // these used to either disable the button silently or return without a
+    // word, which is indistinguishable from a button that does not work.
+    if (!form.name.trim()) {
+      toast.error("Add their full name first.");
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast.error("That email address doesn't look right.");
+      return;
+    }
+    if (form.password.length < MIN_PASSWORD) {
+      toast.error(
+        `The temporary password needs at least ${MIN_PASSWORD} characters — it has ${form.password.length}.`
+      );
+      return;
+    }
+
     setBusy(true);
     try {
       const name = form.name;
@@ -196,14 +211,19 @@ export default function UsersPage() {
             },
             {
               success: `${name}'s profile saved — but they still cannot sign in`,
-              error: `Couldn't add ${name}`,
+              // The usual cause on a retry: a profile for this address is
+              // already there from an earlier attempt.
+              error: `Couldn't add ${name} — is that email already on the team?`,
             }
           );
           if (saved)
-            toast.info({
-              message: "No login was created",
+            // An error, not an info: the member cannot sign in, which is the
+            // thing the administrator was trying to achieve. Errors stay until
+            // dismissed, so this cannot scroll past unnoticed.
+            toast.error({
+              message: `${name} still has no login`,
               detail:
-                "SUPABASE_SERVICE_ROLE_KEY is not set on the server, so create their login in Supabase → Authentication → Users.",
+                "SUPABASE_SERVICE_ROLE_KEY is not set on this server. Add it to portal/.env.local and restart the dev server, or create their login in Supabase → Authentication → Users.",
             });
           if (!saved) return;
         } else {
@@ -427,27 +447,27 @@ export default function UsersPage() {
                 into a message, not typed from memory, and hiding it only
                 invites typos in a password someone else has to use. */}
             <p className="mt-1.5 text-[11px] text-faint">
-              Share this with them and ask them to change it after signing in.
+              {form.password.length === 0
+                ? `Required — at least ${MIN_PASSWORD} characters.`
+                : form.password.length < MIN_PASSWORD
+                  ? `${MIN_PASSWORD - form.password.length} more character${
+                      MIN_PASSWORD - form.password.length === 1 ? "" : "s"
+                    } needed.`
+                  : "Share this with them and ask them to change it after signing in."}
             </p>
           </div>
 
+          {/* Only disabled while the request is in flight. Disabling it for
+              incomplete fields is what made this look broken: nothing said
+              which field was the problem, so the button just sat there. It
+              stays clickable and `invite` names what is missing. */}
           <button
             onClick={invite}
-            disabled={
-              !form.name ||
-              !form.email ||
-              form.password.length < MIN_PASSWORD ||
-              busy
-            }
+            disabled={busy}
             className="btn-accent w-full py-3 text-sm disabled:opacity-40"
           >
             {busy ? "Creating account…" : "Add to team"}
           </button>
-          {/* Honest about the gap: this writes the Studio profile, but the
-              sign-in account is created separately in Supabase Auth — a browser
-              cannot create one, that needs the admin API. Spelled out as steps
-              because "created separately" read as a footnote, and people added
-              here were left with a profile and no way in. */}
           <p className="text-[11px] leading-relaxed text-faint">
             This creates their sign-in account and their Studio profile
             together, so they can sign in straight away with the email and
