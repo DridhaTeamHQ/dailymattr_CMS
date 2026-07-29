@@ -173,6 +173,34 @@ async function main() {
     )
   );
 
+  // ── /api/tts ──────────────────────────────────────────────────────
+  console.log("\n/api/tts");
+  check("rejects missing text", (await get("/api/tts")).status === 400);
+  check(
+    "rejects an oversized body of text",
+    (await get(`/api/tts?text=${"a".repeat(2000)}&lang=en`)).status === 413
+  );
+  for (const lang of ["en&client=injected", "../../etc", "toolongtobealang", "e"]) {
+    check(
+      `rejects lang "${lang}"`,
+      (await get(`/api/tts?text=hi&lang=${encodeURIComponent(lang)}`)).status === 400
+    );
+  }
+  {
+    const r = await get("/api/tts?text=Hello%20from%20DailyMattr&lang=en");
+    check("synthesises valid input", [200, 429, 502].includes(r.status), `status ${r.status}`);
+    if (r.status === 200) check("returns audio/mpeg", (r.type ?? "").includes("audio/mpeg"));
+  }
+  {
+    // One call fans out to ten upstream requests, so it has to be metered.
+    let sawLimit = false;
+    for (let i = 0; i < 26 && !sawLimit; i++) {
+      const r = await get(`/api/tts?text=burst%20${i}&lang=en`);
+      if (r.status === 429) sawLimit = true;
+    }
+    check("rate limits a burst", sawLimit, "26 requests without a 429");
+  }
+
   // ── /api/media/[filename] ─────────────────────────────────────────
   console.log("\n/api/media/[filename]");
   for (const attempt of [
