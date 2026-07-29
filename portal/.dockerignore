@@ -1,0 +1,21 @@
+# Keep the build context small and the image reproducible.
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+
+# Never let a local secret file into an image.
+.env
+.env.local
+.env.*.local
+
+# Nothing here affects the running app.
+README.md
+*.md
+.vscode
+.idea
+.DS_Store
+
+# Uploads were the old on-disk staging area; files live in Supabase Storage now.
+public/uploads

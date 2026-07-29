@@ -16,6 +16,7 @@ import {
   updateUser,
 } from "@/lib/db";
 import { useQuery } from "@/lib/useQuery";
+import { UsersSkeleton } from "@/components/PageSkeleton";
 import { ROLE_META, type Role } from "@/lib/types";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
@@ -47,7 +48,7 @@ export default function UsersPage() {
         Couldn&apos;t load the team: {error}
       </div>
     );
-  if (!user || !data || !can.manageUsers(user.role)) return null;
+  if (!user || !data || !can.manageUsers(user.role)) return <UsersSkeleton />;
   const { users, performance } = data;
 
   // Newsroom totals, so the page opens with the shape of the whole team.

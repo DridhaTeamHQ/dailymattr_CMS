@@ -14,6 +14,7 @@ import {
 } from "@/lib/db";
 import { slugify } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { SettingsSkeleton } from "@/components/PageSkeleton";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -26,7 +27,7 @@ export default function SettingsPage() {
         Couldn&apos;t load categories: {error}
       </div>
     );
-  if (!user || !categories) return null;
+  if (!user || !categories) return <SettingsSkeleton />;
   const manager = can.manageCategories(user.role);
 
   const add = async () => {
