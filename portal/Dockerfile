@@ -34,6 +34,29 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY=$NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY \
     NEXT_TELEMETRY_DISABLED=1
 
+# Fail here, not forty seconds into `next build`.
+#
+# Without these, the build gets as far as prerendering /content/articles and
+# dies inside lib/supabase.ts with a stack trace about a prerender error, which
+# describes the symptom and not the cause. That module throws deliberately —
+# building without keys would produce a bundle that silently cannot reach
+# Supabase — so the check belongs in front of the build, not instead of it.
+RUN for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY \
+             NEXT_PUBLIC_NEWSSTUDIO_URL NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY; do \
+      eval "value=\$$v"; \
+      if [ -z "$value" ]; then \
+        echo ""; \
+        echo "BUILD STOPPED: $v is empty."; \
+        echo ""; \
+        echo "next build compiles NEXT_PUBLIC_* values into the browser bundle,"; \
+        echo "so they must be set on the service before the build runs, not just"; \
+        echo "at runtime. Add all four in Railway under Variables, then Deploy."; \
+        echo "They are the publishable keys from Supabase > Project Settings > API."; \
+        echo ""; \
+        exit 1; \
+      fi; \
+    done
+
 RUN npm run build
 
 # ── runtime ─────────────────────────────────────────────────────────

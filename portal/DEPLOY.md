@@ -35,9 +35,19 @@ container, so all three are just installed.
 | `NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY` | publishable key for the pipeline project |
 
 These are read by `next build`, not at runtime — the values are compiled into the
-browser bundle. Set them before the first build or you get a bundle that cannot
-reach Supabase. They are publishable keys and are meant to be in the browser; RLS
-is what protects the data.
+browser bundle. Set them **before** the build runs. They are publishable keys and
+are meant to be in the browser; RLS is what protects the data.
+
+Miss them and the build stops with `BUILD STOPPED: NEXT_PUBLIC_… is empty` and
+these instructions. Before that check existed the failure was less obvious: the
+build ran for forty seconds and then died prerendering `/content/articles` with
+
+```
+Error: Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY
+Export encountered an error on /(studio)/content/articles/page
+```
+
+which is the symptom — a page that could not prerender — rather than the cause.
 
 `PYTHON_BIN` is already set to `python3` in the Dockerfile. Do not remove it: the
 route defaults to `python`, which does not exist on Debian, and the failure reads
