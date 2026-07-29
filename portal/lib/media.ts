@@ -111,6 +111,30 @@ export function isUnreachableHost(url: string | null | undefined): boolean {
   }
 }
 
+/* Media that exists, on the wrong machine.
+ *
+ * The importer stages downloads into the CMS's own `public/uploads` and, until
+ * now, saved that path — so there are a dozen real clips sitting on one laptop
+ * while the media bucket has never received a single object. The files are
+ * fine; only their address is wrong, and the browser that shows the CMS can
+ * still reach them. That makes them recoverable rather than lost, which is
+ * what `rehostable` marks.
+ */
+const LOCAL_MEDIA_RE = /\/api\/media\/([^/?#]+)$/i;
+
+/** The `/api/media/…` path for a clip still stored on the CMS machine. */
+export function localMediaPath(url: string | null | undefined): string | null {
+  const s = (url ?? "").trim();
+  if (!s) return null;
+  // relative (`/api/media/x.mp4`) or absolute-but-local (`http://localhost:3000/…`)
+  if (!s.startsWith("/") && !isUnreachableHost(s)) return null;
+  const m = LOCAL_MEDIA_RE.exec(s);
+  return m ? `/api/media/${m[1]}` : null;
+}
+
+/** True when a one-click move to the bucket would fix this item. */
+export const rehostable = (url: string | null | undefined) => !!localMediaPath(url);
+
 /**
  * Why this item cannot go live, or null if it can. One sentence, addressed to
  * the editor — it is shown to them verbatim.
