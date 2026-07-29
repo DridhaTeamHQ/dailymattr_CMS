@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { useAuth } from "@/lib/auth";
@@ -34,17 +34,25 @@ export default function PortalLayout({
       <Sidebar />
       <div className="min-w-0 flex-1">
         <Topbar />
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        {/* Keyed so each route still animates in, but deliberately not wrapped
+            in AnimatePresence.
+
+            It was <AnimatePresence mode="wait"> with an exit animation, which
+            holds the incoming page back until the outgoing one has finished
+            leaving. Every page here early-returns a skeleton while its data
+            loads, so the tree churns during a navigation — and an exit that
+            gets interrupted never completes, so the next page is never mounted
+            and the content area stays empty until a reload rebuilds the tree.
+
+            A 0.32s slide on the way out is not worth a blank page. */}
+        <motion.main
+          key={pathname}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+        >
+          {children}
+        </motion.main>
       </div>
     </div>
   );
