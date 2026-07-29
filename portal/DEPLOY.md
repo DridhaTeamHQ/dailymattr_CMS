@@ -9,9 +9,19 @@ container, so all three are just installed.
 ## Setting it up
 
 1. **New project → Deploy from GitHub repo**, pointed at `DridhaTeamHQ/dailymattr_CMS`.
-2. **Settings → Root Directory: `portal`.** The app is not at the repository
-   root. `railway.json` and `Dockerfile` both live in `portal/`, so Railway finds
-   them once the root is set.
+2. **Settings → Source → Root Directory: `portal`.** This is the step that is
+   easy to miss and the failure is confusing when you do.
+
+   The app is not at the repository root, and neither is `railway.json` or the
+   `Dockerfile` — both live in `portal/`. Left at the default, Railway never sees
+   them, falls back to its own Railpack builder, finds nothing it can build at
+   the root, and exits with `railpack process exited with an error` after
+   printing a directory listing of the repository. The listing is the tell: if
+   you see `portal/`, `supabase/` and `MVP_PLAN.md` in the build log, it is
+   building the wrong directory.
+
+   Set it, then **Deploy** again — changing the setting alone does not always
+   trigger a rebuild.
 3. **Add the four variables** below before the first deploy.
 4. **Settings → Networking → Generate Domain.**
 
