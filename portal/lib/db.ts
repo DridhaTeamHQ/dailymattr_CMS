@@ -298,6 +298,78 @@ export async function deleteContent(id: string, actor: CmsUser) {
   if (item) await logAudit(actor, "deleted", item.kind, item.title);
 }
 
+/** One page of a library, plus how many rows are in the bucket. */
+export type ContentPage = { rows: ContentItem[]; total: number };
+
+/** The status buckets the library tabs page through. */
+export type ContentBucket = "all" | "in_review" | "published";
+
+/**
+ * One page of a content library, filtered and counted by the database.
+ *
+ * The libraries used to load every item of a kind and slice in the browser,
+ * which is fine at fifty rows and stops being fine long before it becomes
+ * visibly slow. Paging here means the page stays the same size as the
+ * library grows.
+ *
+ * Ordered by `updated_at` rather than the client's old
+ * coalesce(published_at, updated_at, created_at): publishing writes both, and
+ * `updated_at` lands last, so the resulting order matches — and unlike a
+ * coalesce it can be paged consistently. `id` breaks ties, because two rows
+ * sharing a timestamp have no inherent order, and an unstable order across
+ * requests is how a row shows up on two pages or on neither.
+ */
+export async function listContentPage(
+  kind: ContentKind,
+  {
+    page = 1,
+    size = 10,
+    bucket = "all",
+  }: { page?: number; size?: number; bucket?: ContentBucket } = {}
+): Promise<ContentPage> {
+  let q = supabase
+    .from("content_items")
+    .select("*", { count: "exact" })
+    .eq("kind", kind);
+  if (bucket !== "all") q = q.eq("status", bucket);
+
+  const from = (Math.max(1, page) - 1) * size;
+  const { data, error, count } = await q
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + size - 1);
+  fail("listContentPage", error);
+
+  return { rows: (data ?? []).map(toContent), total: count ?? 0 };
+}
+
+/**
+ * How many items sit in each library tab.
+ *
+ * Head requests — the counts come back in the Content-Range header and no row
+ * is transferred, which is the point: the tab labels need three numbers, not
+ * three lists.
+ */
+export async function countContentByKind(kind: ContentKind) {
+  const tally = async (status?: ContentStatus) => {
+    let q = supabase
+      .from("content_items")
+      .select("id", { count: "exact", head: true })
+      .eq("kind", kind);
+    if (status) q = q.eq("status", status);
+    const { error, count } = await q;
+    fail("countContentByKind", error);
+    return count ?? 0;
+  };
+
+  const [all, inReview, published] = await Promise.all([
+    tally(),
+    tally("in_review"),
+    tally("published"),
+  ]);
+  return { all, inReview, published };
+}
+
 /** Newest-activity first, matching how the libraries list content. */
 export async function listContentByKind(kind: ContentKind) {
   const items = await listContent(kind);
@@ -490,19 +562,89 @@ const toNewsStudio = (r: Row): NewsStudioArticle => {
   };
 };
 
-/** Approved pipeline articles, newest first. Read-only by design. */
-export async function listNewsStudio(limit = 60): Promise<NewsStudioArticle[]> {
-  if (!newsstudio) return [];
-  const { data, error } = await newsstudio
+const NEWS_COLUMNS =
+  "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at";
+
+/** One page of pipeline articles, plus how many matched in total. */
+export type NewsStudioPage = { rows: NewsStudioArticle[]; total: number };
+
+/**
+ * Inside an `or(...)` filter PostgREST reads commas as separators and
+ * parentheses as grouping, so a search for "Delhi, Mumbai" would be parsed as
+ * filter syntax rather than as text. Blank those out before interpolating.
+ */
+const searchTerm = (s: string) => s.replace(/[,()*%\\]/g, " ").trim();
+
+/**
+ * One page of approved pipeline articles, newest first. Read-only by design.
+ *
+ * Paged and searched on the server, so the size of the pipeline table stops
+ * mattering to this screen: the browser holds one page, whether the table
+ * holds three thousand rows or three million. `total` is the server's exact
+ * count of everything matching, which is what the pager needs to know how
+ * many pages there are without having seen them.
+ *
+ * Ordered by id as well as date, because two articles created in the same
+ * second have no inherent order — and an unstable order across requests is
+ * how a row appears twice on one page and never on the next.
+ */
+export async function listNewsStudio({
+  page = 1,
+  size = 12,
+  search = "",
+}: { page?: number; size?: number; search?: string } = {}): Promise<NewsStudioPage> {
+  if (!newsstudio) return { rows: [], total: 0 };
+
+  let q = newsstudio
     .from("articles")
-    .select(
-      "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at"
-    )
-    .in("status", ["approved", "sent"])
+    .select(NEWS_COLUMNS, { count: "exact" })
+    .in("status", ["approved", "sent"]);
+
+  // Matches the fields the card shows, so a hit is always visible on screen.
+  const term = searchTerm(search);
+  if (term) {
+    q = q.or(
+      ["title", "edited_title", "category", "topic", "section", "source"]
+        .map((c) => `${c}.ilike.*${term}*`)
+        .join(",")
+    );
+  }
+
+  const from = (Math.max(1, page) - 1) * size;
+  const { data, error, count } = await q
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("id", { ascending: false })
+    .range(from, from + size - 1);
   fail("listNewsStudio", error);
-  return (data ?? []).map(toNewsStudio).filter((a) => a.title);
+
+  return { rows: (data ?? []).map(toNewsStudio), total: count ?? 0 };
+}
+
+/**
+ * Specific pipeline articles by id, for the app feed.
+ *
+ * A selection in DB B stores only the article id, so the feed needs the
+ * articles themselves — and they are almost never on the page of the grid
+ * currently being browsed. Chunked because a URL carrying a few hundred ids
+ * is one PostgREST will refuse.
+ */
+export async function listNewsStudioByIds(
+  ids: string[]
+): Promise<NewsStudioArticle[]> {
+  if (!newsstudio || ids.length === 0) return [];
+  const CHUNK = 100;
+  const out: NewsStudioArticle[] = [];
+
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await newsstudio
+      .from("articles")
+      .select(NEWS_COLUMNS)
+      .in("id", ids.slice(i, i + CHUNK));
+    fail("listNewsStudioByIds", error);
+    out.push(...(data ?? []).map(toNewsStudio));
+  }
+
+  return out;
 }
 
 const UUID_RE =

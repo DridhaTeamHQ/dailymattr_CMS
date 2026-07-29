@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { listAudit, listUsers } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { ActivitySkeleton } from "@/components/PageSkeleton";
 
 const PAGE = 25;
 
@@ -44,7 +45,7 @@ export default function ActivityPage() {
         Couldn&apos;t load activity: {error}
       </div>
     );
-  if (!user || !data) return null;
+  if (!user || !data) return <ActivitySkeleton />;
 
   const filtered =
     who === "all" ? data.audit : data.audit.filter((a) => a.actorId === who);

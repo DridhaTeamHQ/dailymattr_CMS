@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AudioLines,
@@ -27,17 +27,22 @@ import { TraxCard } from "@/components/TraxCard";
 import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
+import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
+import { usePageParam } from "@/lib/usePageParam";
 import {
+  countContentByKind,
   deleteContent,
   listContentByKind,
+  listContentPage,
   listUsers,
   setContentStatus,
+  type ContentBucket,
 } from "@/lib/db";
 import { formatDateTime, timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { mediaBlocker } from "@/lib/media";
 import { estimateDurationSec } from "@/lib/tts";
+import { ContentListSkeleton } from "@/components/PageSkeleton";
 import {
   KIND_META,
   type ContentItem,
@@ -72,7 +77,16 @@ const getYoutubeId = (url: string | null) => {
   return null;
 };
 
+/** The grid pager reads the query string — see the note on ArticlesPage. */
 export default function KindListPage() {
+  return (
+    <Suspense fallback={<ContentListSkeleton />}>
+      <KindList />
+    </Suspense>
+  );
+}
+
+function KindList() {
   const { kind: raw } = useParams<{ kind: string }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -83,7 +97,7 @@ export default function KindListPage() {
   const [note, setNote] = useState("");
   const [tab, setTab] = useState<PixTab>("all");
   const [tick, setTick] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePageParam();
   const [activeVideo, setActiveVideo] = useState<ContentItem | null>(null);
 
   useEffect(() => {
@@ -101,14 +115,55 @@ export default function KindListPage() {
     };
   }, [activeVideo]);
 
+  const size = PAGE_SIZES.pixGrid;
+
+  /*
+   * Pix is paged by the database; Qix and Trax still load their library and
+   * page it in the browser.
+   *
+   * Pix is the one that grows — it is the format the newsroom produces most —
+   * and it is the only one asked to scale here. The two paths are kept behind
+   * one shape (`rows`, `total`, `counts`) so everything below this point reads
+   * the same either way.
+   */
   const { data, error, refetch } = useQuery(async () => {
-    if (!kind) return { items: [], users: [] };
-    const [items, users] = await Promise.all([
-      listContentByKind(kind),
-      listUsers(),
-    ]);
-    return { items, users };
-  }, [kind, tick]);
+    if (!kind) return null;
+    const users = await listUsers();
+
+    if (kind === "pix") {
+      const bucket: ContentBucket =
+        tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
+      const [pix, counts] = await Promise.all([
+        listContentPage("pix", { page, size, bucket }),
+        countContentByKind("pix"),
+      ]);
+      return { users, rows: pix.rows, total: pix.total, counts, library: pix.rows };
+    }
+
+    const items = await listContentByKind(kind);
+    const queue = items.filter((c) => c.status === "in_review");
+    const feed = items.filter((c) => c.status === "published");
+    const visible = tab === "queue" ? queue : tab === "feed" ? feed : items;
+    return {
+      users,
+      rows: pageSlice(visible, page, size),
+      total: visible.length,
+      counts: {
+        all: items.length,
+        inReview: queue.length,
+        published: feed.length,
+      },
+      // Next/previous in the Trax player walk the library, not the page.
+      library: items,
+    };
+  }, [kind, page, size, tab, tick]);
+
+  const lastPage = data ? pageCount(data.total, size) : 1;
+  // Approving the last item on a page — or a hand-typed ?page=99 — leaves the
+  // URL pointing past the end. Walk it back rather than showing an empty grid.
+  useEffect(() => {
+    if (data && page > lastPage) setPage(lastPage);
+  }, [data, page, lastPage, setPage]);
 
   if (error)
     return (
@@ -116,8 +171,8 @@ export default function KindListPage() {
         Couldn&apos;t load content: {error}
       </div>
     );
-  if (!user || !kind || !data) return null;
-  const { items, users } = data;
+  if (!user || !kind || !data) return <ContentListSkeleton />;
+  const { users, counts, rows, library } = data;
   const meta = KIND_META[kind];
   const Icon = ICONS[kind as keyof typeof ICONS];
 
@@ -133,28 +188,26 @@ export default function KindListPage() {
       // The publish trigger can refuse — show why rather than failing silently.
       alert(e instanceof Error ? e.message : String(e));
     }
+    // A status change moves an item between tabs, so the counts move too.
     refetch();
   };
 
-  const preview = items.find((c) => c.id === previewId) ?? null;
-  const queue = items.filter((c) => c.status === "in_review");
-  const feed = items.filter((c) => c.status === "published");
+  // Every modal opens from a card that is on screen, so the page is enough.
+  const preview = rows.find((c) => c.id === previewId) ?? null;
+  const current = clampPage(page, data.total, size);
   // Pix, Qix, and Trax share the 9:16 poster-tile library grid UI.
   const cardGrid = kind === "pix" || kind === "qix" || kind === "trax";
-  const visible =
-    !cardGrid || tab === "all" ? items : tab === "queue" ? queue : feed;
-
-  // Approving or deleting can empty the last page, so clamp before slicing.
-  const size = PAGE_SIZES.pixGrid;
-  const current = clampPage(page, visible.length, size);
-  const paged = pageSlice(visible, current, size);
 
   const GRID_TABS: [PixTab, string, number][] = [
-    ["all", `All ${meta.label}`, items.length],
+    ["all", `All ${meta.label}`, counts.all],
     ...(reviewer
-      ? ([["queue", "Awaiting QA", queue.length]] as [PixTab, string, number][])
+      ? ([["queue", "Awaiting QA", counts.inReview]] as [
+          PixTab,
+          string,
+          number,
+        ][])
       : []),
-    ["feed", "App feed", feed.length],
+    ["feed", "App feed", counts.published],
   ];
 
   /**
@@ -272,7 +325,7 @@ export default function KindListPage() {
         </div>
       </SectionHeader>
 
-      {cardGrid && items.length > 0 && (
+      {cardGrid && counts.all > 0 && (
         <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
           {GRID_TABS.map(([t, label, count]) => (
             <button
@@ -304,7 +357,7 @@ export default function KindListPage() {
         </div>
       )}
 
-      {items.length === 0 ? (
+      {counts.all === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-14 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
             <Icon size={22} />
@@ -316,7 +369,7 @@ export default function KindListPage() {
           </p>
         </div>
       ) : cardGrid ? (
-        visible.length === 0 ? (
+        rows.length === 0 ? (
           <div className="card flex flex-col items-center gap-2 p-14 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
               <Check size={20} />
@@ -333,7 +386,7 @@ export default function KindListPage() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {paged.map((c, i) => {
+              {rows.map((c, i) => {
                 const author = users.find((u) => u.id === c.createdBy)?.fullName;
                 const actions = reviewer ? reviewActions(c) : undefined;
                 return (
@@ -371,7 +424,7 @@ export default function KindListPage() {
             </div>
             <Pager
               page={current}
-              total={visible.length}
+              total={data.total}
               size={size}
               onPage={setPage}
               label={meta.label}
@@ -381,7 +434,7 @@ export default function KindListPage() {
       ) : (
         /* ── STANDARD LIST (TRAX) ────────────────────────────────────── */
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((c, i) => {
+          {rows.map((c, i) => {
             const author = users.find((u) => u.id === c.createdBy);
             return (
               <motion.div
@@ -479,7 +532,7 @@ export default function KindListPage() {
                     author={users.find((u) => u.id === activeVideo.createdBy)?.fullName}
                     onClose={() => setActiveVideo(null)}
                     onNext={() => {
-                      const traxList = items.filter((i) => i.kind === "trax");
+                      const traxList = library.filter((i) => i.kind === "trax");
                       const idx = traxList.findIndex((i) => i.id === activeVideo.id);
                       if (traxList.length > 0) {
                         const nextIdx = (idx + 1) % traxList.length;
@@ -487,7 +540,7 @@ export default function KindListPage() {
                       }
                     }}
                     onPrevious={() => {
-                      const traxList = items.filter((i) => i.kind === "trax");
+                      const traxList = library.filter((i) => i.kind === "trax");
                       const idx = traxList.findIndex((i) => i.id === activeVideo.id);
                       if (traxList.length > 0) {
                         const prevIdx = (idx - 1 + traxList.length) % traxList.length;
@@ -658,7 +711,7 @@ export default function KindListPage() {
           error, no delete — a button that did nothing at all, on the two
           libraries where the junk rows actually accumulated. */}
       <RejectWithNote
-        item={items.find((c) => c.id === rejectId) ?? null}
+        item={rows.find((c) => c.id === rejectId) ?? null}
         note={note}
         onNote={setNote}
         onClose={() => setRejectId(null)}
@@ -669,7 +722,7 @@ export default function KindListPage() {
       />
       <ConfirmDelete
         kind={kind}
-        item={items.find((c) => c.id === deleteId) ?? null}
+        item={rows.find((c) => c.id === deleteId) ?? null}
         onClose={() => setDeleteId(null)}
         onConfirm={async (id) => {
           /* Surface a refusal rather than closing as though it worked.

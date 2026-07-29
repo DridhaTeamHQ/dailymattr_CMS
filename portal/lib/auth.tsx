@@ -217,13 +217,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let alive = true;
 
+    /* ── Fast boot ────────────────────────────────────────────────────
+     *
+     * `getSession()` reads the token cached in localStorage — it never
+     * touches the network, so it returns in under 1 ms. That is enough
+     * to render the shell (sidebar, topbar, and skeleton) immediately.
+     *
+     * `getUser()` is the authoritative check and runs in the background.
+     * If the server says the session is dead, `syncFromSession` clears
+     * the user and the next render lands on the login screen. The gap
+     * between the two is invisible when the session is valid (the common
+     * case) and only a brief flash when it is not (edge case: revoked
+     * token).
+     *
+     * Previously both calls were sequential and blocking, which added
+     * 1–3 s of spinner on every page load.
+     */
     supabase.auth
       .getSession()
       .then(async ({ data }) => {
         if (!alive) return;
-        await syncFromSession(data.session?.user?.id);
+        const uid = data.session?.user?.id;
+        if (!uid) {
+          setUser(null);
+          setReady(true);
+          return;
+        }
+
+        // Fast path: load the profile from the local session immediately
+        // so the UI can render while the server check happens.
+        const email = data.session?.user?.email;
+        const profile = await loadProfile(uid, email);
+        if (!alive) return;
+        if (profile && profile.isActive) {
+          setUser((prev) => (prev && sameProfile(prev, profile) ? prev : profile));
+        }
+        setReady(true);
+
+        // Slow path: verify the session with the server in the background.
+        // If it's invalid, syncFromSession will clear the user.
+        syncFromSession(uid);
       })
-      .finally(() => {
+      .catch(() => {
         if (alive) setReady(true);
       });
 

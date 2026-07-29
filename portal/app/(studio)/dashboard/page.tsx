@@ -21,6 +21,7 @@ import {
 } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { DashboardSkeleton } from "@/components/PageSkeleton";
 import { type ContentKind } from "@/lib/types";
 
 const KINDS: ContentKind[] = ["article", "pix", "qix", "trax"];
@@ -28,16 +29,26 @@ const KINDS: ContentKind[] = ["article", "pix", "qix", "trax"];
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data, error } = useQuery(async () => {
-    const [content, audit, selections] = await Promise.all([
+    // All four queries fire in parallel — no waiting for selections before
+    // fetching newsstudio. The join happens client-side after everything lands.
+    const [content, audit, selectionsAndNews] = await Promise.all([
       listContent(),
       listAudit(40),
-      listSelections(),
+      // Selections + their NewsStudio articles: selections is fast (tiny table)
+      // so chain it only with the newsstudio fetch, not with content/audit.
+      listSelections().then(async (selections) => {
+        const newsstudio = await getNewsStudioByIds(
+          selections.map((s) => s.articleId)
+        );
+        return { selections, newsstudio };
+      }),
     ]);
-    // Only the approved ids need fetching from the pipeline database.
-    const newsstudio = await getNewsStudioByIds(
-      selections.map((s) => s.articleId)
-    );
-    return { content, audit, selections, newsstudio };
+    return {
+      content,
+      audit,
+      selections: selectionsAndNews.selections,
+      newsstudio: selectionsAndNews.newsstudio,
+    };
   });
 
   if (error)
@@ -46,7 +57,7 @@ export default function DashboardPage() {
         Couldn&apos;t load the dashboard: {error}
       </div>
     );
-  if (!user || !data) return null;
+  if (!user || !data) return <DashboardSkeleton />;
 
   const published = data.content.filter((c) => c.status === "published").length;
   const inReview = data.content.filter((c) => c.status === "in_review").length;

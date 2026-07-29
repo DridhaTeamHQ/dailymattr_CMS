@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -18,11 +18,13 @@ import NewsVisual from "@/components/NewsVisual";
 import { Pager } from "@/components/Pager";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
+import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
+import { usePageParam } from "@/lib/usePageParam";
 import {
   approveArticle,
   listContentByKind,
   listNewsStudio,
+  listNewsStudioByIds,
   listSelections,
   listUsers,
   logAudit,
@@ -31,37 +33,94 @@ import {
 } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { ArticlesSkeleton } from "@/components/PageSkeleton";
 import type { NewsStudioArticle } from "@/lib/types";
 
 type Tab = "newsstudio" | "cms" | "feed";
 
+/**
+ * `usePageParam` reads the query string, which is not knowable while the route
+ * is prerendered — so the tabs render inside a Suspense boundary and the
+ * skeleton stands in until the URL is readable on the client.
+ */
 export default function ArticlesPage() {
+  return (
+    <Suspense fallback={<ArticlesSkeleton />}>
+      <ArticlesTabs />
+    </Suspense>
+  );
+}
+
+function ArticlesTabs() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("newsstudio");
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
-  // One page counter — the tabs reset it, so each list starts at the top.
-  const [page, setPage] = useState(1);
+  // One page counter, held in ?page — the tabs reset it, so each list starts
+  // at the top.
+  const [page, setPage] = usePageParam();
 
+  // Typing shouldn't fire a query per keystroke now that searching happens on
+  // the server; settle for a moment first.
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const newsSize = PAGE_SIZES.newsGrid;
+  const rowSize = PAGE_SIZES.articleRows;
+
+  /* Everything that doesn't depend on which page is being viewed. The app
+     feed joins selections (DB B) to their articles (DB A) by id, and those
+     articles are almost never the twelve currently on screen — so they are
+     fetched by id rather than looked up in the grid's page. */
   const { data, error, refetch } = useQuery(async () => {
-    const [newsstudio, selections, written, users] = await Promise.all([
-      listNewsStudio(60),
+    const [selections, written, users] = await Promise.all([
       listSelections(),
       listContentByKind("article"),
       listUsers(),
     ]);
-    return { newsstudio, selections, written, users };
+    const feedArticles = await listNewsStudioByIds(
+      selections.map((s) => s.articleId)
+    );
+    return { selections, written, users, feedArticles };
   });
 
-  if (error)
+  /* One page of the grid. Re-runs on page or search change only; useQuery
+     keeps the previous page on screen while the next one loads, so paging
+     doesn't blink back to a skeleton. */
+  const {
+    data: news,
+    error: newsError,
+    refetch: refetchNews,
+  } = useQuery(
+    () => listNewsStudio({ page, size: newsSize, search: term }),
+    [page, term, newsSize]
+  );
+
+  const newsCount = news ? pageCount(news.total, newsSize) : 1;
+  // A hand-typed ?page=900 on a list that has 240 pages: land on the last one
+  // rather than showing an empty grid.
+  useEffect(() => {
+    if (news && page > newsCount) setPage(newsCount);
+  }, [news, page, newsCount, setPage]);
+
+  const failure = error ?? newsError;
+  if (failure)
     return (
       <div className="card p-8 text-sm text-rose">
-        Couldn&apos;t load articles: {error}
+        Couldn&apos;t load articles: {failure}
       </div>
     );
-  if (!user) return null;
+  if (!user || !data || !news) return <ArticlesSkeleton />;
   const approver = can.approveArticles(user.role);
-  const refresh = () => refetch();
+  // Approving changes the selections *and* the ring on the grid card, so both
+  // queries have to hear about it.
+  const refresh = () => {
+    refetch();
+    refetchNews();
+  };
 
   // ── approval actions ────────────────────────────────────────────
   const approve = async (art: NewsStudioArticle) => {
@@ -107,38 +166,33 @@ export default function ArticlesPage() {
   };
 
   // ── derived ─────────────────────────────────────────────────────
-  const q = query.trim().toLowerCase();
-  const filtered =
-    data?.newsstudio.filter(
-      (n) =>
-        !q ||
-        n.title.toLowerCase().includes(q) ||
-        n.category.toLowerCase().includes(q) ||
-        n.source.toLowerCase().includes(q)
-    ) ?? [];
+  const selections = data.selections;
+  const written = data.written;
 
-  const selections = data?.selections ?? [];
-  const written = data?.written ?? [];
-
-  // Approving or searching can empty the last page, so clamp before slicing.
-  const newsSize = PAGE_SIZES.newsGrid;
-  const rowSize = PAGE_SIZES.articleRows;
-  const newsPage = clampPage(page, filtered.length, newsSize);
+  // The grid arrives already paged and searched; the feed and the drafts are
+  // small enough to page in the browser. Approving can empty the last page of
+  // those two, so clamp before slicing.
+  const newsRows = news.rows;
+  const newsPage = clampPage(page, news.total, newsSize);
   const feedPage = clampPage(page, selections.length, rowSize);
   const writtenPage = clampPage(page, written.length, rowSize);
-  const newsRows = pageSlice(filtered, page, newsSize);
   const feedRows = pageSlice(selections, page, rowSize);
   const writtenRows = pageSlice(written, page, rowSize);
 
-  const selOf = (id: string) => data?.selections.find((s) => s.articleId === id);
+  const selOf = (id: string) => selections.find((s) => s.articleId === id);
   const nameOf = (id: string) =>
-    data?.users.find((u) => u.id === id)?.fullName ?? "—";
-  const previewArticle = data?.newsstudio.find((n) => n.id === previewId) ?? null;
+    data.users.find((u) => u.id === id)?.fullName ?? "—";
+  // The preview opens from the grid or from the feed, so look in both.
+  const previewArticle =
+    newsRows.find((n) => n.id === previewId) ??
+    data.feedArticles.find((n) => n.id === previewId) ??
+    null;
 
+  // The NewsStudio count is the server's, not the length of the page on screen.
   const TABS: [Tab, string, number | undefined][] = [
-    ["newsstudio", "NewsStudio", data?.newsstudio.length],
-    ["cms", "Written in Studio", data?.written.length],
-    ["feed", "App feed", data?.selections.length],
+    ["newsstudio", "NewsStudio", news.total],
+    ["cms", "Written in Studio", written.length],
+    ["feed", "App feed", selections.length],
   ];
 
   return (
@@ -218,27 +272,18 @@ export default function ArticlesPage() {
             )}
           </div>
 
-          {!data ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="card overflow-hidden">
-                  <div className="h-36 w-full animate-pulse bg-canvas" />
-                  <div className="space-y-2 p-4">
-                    <div className="h-3.5 w-4/5 animate-pulse rounded-full bg-canvas" />
-                    <div className="h-3 w-full animate-pulse rounded-full bg-canvas" />
-                    <div className="h-3 w-2/3 animate-pulse rounded-full bg-canvas" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
+          {newsRows.length === 0 ? (
             <div className="card flex flex-col items-center gap-2 p-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
                 <Search size={20} />
               </span>
-              <p className="font-bold">No stories match “{query}”</p>
+              <p className="font-bold">
+                {term ? `No stories match “${term}”` : "No stories yet"}
+              </p>
               <p className="text-sm text-muted">
-                Try a different title, category or source.
+                {term
+                  ? "Try a different title, category or source."
+                  : "Approved pipeline stories will appear here."}
               </p>
             </div>
           ) : (
@@ -376,7 +421,7 @@ export default function ArticlesPage() {
 
           <Pager
             page={newsPage}
-            total={filtered.length}
+            total={news.total}
             size={newsSize}
             onPage={setPage}
             label="stories"
@@ -400,16 +445,10 @@ export default function ArticlesPage() {
                 </p>
               </div>
             </div>
-            <Pill tone="mint">{data?.selections.length ?? 0} approved</Pill>
+            <Pill tone="mint">{selections.length} approved</Pill>
           </div>
 
-          {!data ? (
-            <div className="space-y-3">
-              {[0, 1].map((i) => (
-                <div key={i} className="card h-24 animate-pulse" />
-              ))}
-            </div>
-          ) : data.selections.length === 0 ? (
+          {selections.length === 0 ? (
             <div className="card flex flex-col items-center gap-2 p-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
                 <Check size={20} />
@@ -433,7 +472,7 @@ export default function ArticlesPage() {
             <div className="space-y-3">
               <AnimatePresence mode="popLayout">
                 {feedRows.map((sel) => {
-                  const art = data.newsstudio.find(
+                  const art = data.feedArticles.find(
                     (n) => n.id === sel.articleId
                   );
                   if (!art) return null;
@@ -525,11 +564,7 @@ export default function ArticlesPage() {
       {tab === "cms" && (
         <>
           <div className="space-y-3">
-            {!data ? (
-              [0, 1].map((i) => (
-                <div key={i} className="card h-24 animate-pulse" />
-              ))
-            ) : data.written.length === 0 ? (
+            {written.length === 0 ? (
               <div className="card flex flex-col items-center gap-2 p-14 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
                   <Plus size={20} />

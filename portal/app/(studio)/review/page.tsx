@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Eye, Rocket, ShieldCheck, XCircle } from "lucide-react";
@@ -10,11 +10,13 @@ import ReviewEditModal from "@/components/ReviewEditModal";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
+import { usePageParam } from "@/lib/usePageParam";
 import { filledPixPoints } from "@/lib/pix";
 import { stripHighlightBrackets } from "@/lib/pixComposer";
 import { listContent, listUsers, logAudit, setContentStatus, updateContent } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
+import { ReviewSkeleton } from "@/components/PageSkeleton";
 import { KIND_META, type CmsUser, type ContentItem } from "@/lib/types";
 
 function Row({
@@ -96,16 +98,26 @@ function Row({
   );
 }
 
+/** The two pagers read the query string — see the note on ArticlesPage. */
 export default function ReviewPage() {
+  return (
+    <Suspense fallback={<ReviewSkeleton />}>
+      <ReviewQueue />
+    </Suspense>
+  );
+}
+
+function ReviewQueue() {
   const { user } = useAuth();
   const router = useRouter();
   const [tick, setTick] = useState(0);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  // The queue and the approved shelf page independently.
-  const [queuePage, setQueuePage] = useState(1);
-  const [approvedPage, setApprovedPage] = useState(1);
+  // The queue and the approved shelf page independently, so they need a
+  // parameter each rather than a shared ?page.
+  const [queuePage, setQueuePage] = usePageParam("queue");
+  const [approvedPage, setApprovedPage] = usePageParam("approved");
 
   useEffect(() => {
     if (user && !can.review(user.role)) router.replace("/dashboard");
@@ -126,7 +138,7 @@ export default function ReviewPage() {
         Couldn&apos;t load the review queue: {error}
       </div>
     );
-  if (!user || !data || !can.review(user.role)) return null;
+  if (!user || !data || !can.review(user.role)) return <ReviewSkeleton />;
   const publisher = can.publish(user.role);
   const preview =
     [...data.queue, ...data.approved].find((c) => c.id === previewId) ?? null;
