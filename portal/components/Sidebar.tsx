@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   AudioLines,
+  BarChart3,
   Clapperboard,
   Image as ImageIcon,
   LayoutDashboard,
@@ -22,6 +23,12 @@ const NAV = [
   { href: "/content/pix", label: "Pix", icon: ImageIcon },
   { href: "/content/qix", label: "Qix", icon: Clapperboard },
   { href: "/content/trax", label: "Trax", icon: AudioLines },
+  {
+    href: "/analytics",
+    label: "Analytics",
+    icon: BarChart3,
+    gate: "seeStats" as const,
+  },
   { href: "/review", label: "Review", icon: ShieldCheck, gate: "review" as const },
   { href: "/users", label: "Users", icon: Users, gate: "manageUsers" as const },
   { href: "/settings", label: "Settings", icon: Settings },

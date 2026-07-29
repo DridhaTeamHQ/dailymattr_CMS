@@ -594,6 +594,8 @@ export async function listContentStats(): Promise<Map<string, ContentStats>> {
         shares: Number(r.shares ?? 0),
         views: Number(r.views ?? 0),
         commentOpens: Number(r.comment_opens ?? 0),
+        comments: Number(r.comments ?? 0),
+        sourceOpens: Number(r.source_opens ?? 0),
         lastAt: (r.last_at as string | null) ?? null,
       });
     }

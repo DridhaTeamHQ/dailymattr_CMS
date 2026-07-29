@@ -152,7 +152,12 @@ export interface ContentStats {
   saves: number;
   shares: number;
   views: number;
+  /** Panel opened. The denominator for `comments`. */
   commentOpens: number;
+  /** Something actually said. See migration 12. */
+  comments: number;
+  /** Tapped through to the publisher. */
+  sourceOpens: number;
   lastAt: string | null;
 }
 
