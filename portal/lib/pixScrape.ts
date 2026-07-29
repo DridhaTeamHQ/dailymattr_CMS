@@ -11,7 +11,7 @@
  * The endpoint returns `imageQuery: null` and the composer copes.
  */
 
-import { assertPublicUrl, safeFetch } from "./safeFetch";
+import { InvalidInputError, assertPublicUrl, safeFetch } from "./safeFetch";
 
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
@@ -80,7 +80,8 @@ async function bestAvailableImage(
  * network. Async because it has to resolve DNS to do that honestly.
  */
 export async function parseTargetUrl(raw: unknown): Promise<URL> {
-  if (!raw || typeof raw !== "string") throw new Error("A URL is required.");
+  if (!raw || typeof raw !== "string")
+    throw new InvalidInputError("A URL is required.");
   const { url } = await assertPublicUrl(raw);
   return url;
 }

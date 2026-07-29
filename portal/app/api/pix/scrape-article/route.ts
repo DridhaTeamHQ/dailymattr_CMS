@@ -7,7 +7,7 @@ import {
 import { writePixPost } from "@/lib/openai";
 import { parseTargetUrl, scrapeArticle } from "@/lib/pixScrape";
 import { acquireSlot, clientIp, rateLimit, releaseSlot } from "@/lib/rate-limit";
-import { errorResponse } from "@/lib/safeFetch";
+import { InvalidInputError, errorResponse } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +32,9 @@ const RULES = (ip: string) => [
 export async function POST(req: Request) {
   let url: URL;
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => {
+      throw new InvalidInputError("Invalid request body.");
+    });
     // Resolves DNS and refuses internal addresses before anything is fetched.
     url = await parseTargetUrl(body?.url);
   } catch (e) {

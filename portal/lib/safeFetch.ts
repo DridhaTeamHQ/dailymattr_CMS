@@ -19,6 +19,14 @@ const MAX_REDIRECTS = 5;
 
 export class UnsafeUrlError extends Error {}
 export class FetchLimitError extends Error {}
+/**
+ * The caller sent something wrong — a missing field, an unparseable body.
+ *
+ * Distinct from the fetch failures below because it is answered differently:
+ * these are 400s the caller can fix, not 502s about a source being unreachable.
+ * Without it, "A URL is required." was reported as "Couldn't reach that link."
+ */
+export class InvalidInputError extends Error {}
 
 /** Loopback, private, link-local, CGNAT and reserved space. */
 function isBlockedIp(ip: string): boolean {
@@ -204,6 +212,8 @@ async function readCapped(res: Response, maxBytes: number): Promise<ArrayBuffer>
 
 /** Maps a thrown guard error onto an HTTP response the caller can return. */
 export function errorResponse(e: unknown): Response {
+  if (e instanceof InvalidInputError)
+    return Response.json({ error: e.message }, { status: 400 });
   if (e instanceof UnsafeUrlError)
     return Response.json({ error: e.message }, { status: 400 });
   if (e instanceof FetchLimitError)

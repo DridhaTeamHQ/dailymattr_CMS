@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseTargetUrl, scrapeListing } from "@/lib/pixScrape";
-import { errorResponse } from "@/lib/safeFetch";
+import { InvalidInputError, errorResponse } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   let url: URL;
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => {
+      throw new InvalidInputError("Invalid request body.");
+    });
     // Resolves DNS and refuses internal addresses before anything is fetched.
     url = await parseTargetUrl(body?.url);
   } catch (e) {
