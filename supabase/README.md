@@ -26,7 +26,19 @@ Run in this order against a fresh project (they are already applied to
 | 7 | `revoke_helper_function_execute` | *(superseded by 9)* |
 | 8 | `seed_auth_users_for_demo` | Real `auth.users` rows for the demo logins |
 | 9 | `move_helpers_to_private_schema` | Moves policy helpers into `private` so PostgREST can't expose them |
-| 10 | `10_engagement` | **Not applied yet.** `content_reactions`, `content_events`, the `content_stats` view, and the two RPCs the app writes through. Read access is limited to `super_admin` and `chief_editor`; the app writes as `anon` through security-definer functions rather than touching the tables. |
+| 10 | `10_engagement` | `content_reactions`, `content_events`, the `content_stats` view, and the two RPCs the app writes through. Read access is limited to `super_admin` and `chief_editor`; the app writes as `anon` through security-definer functions rather than touching the tables. |
+
+### Two linter warnings that are the design
+
+Supabase's security advisor flags `app_react` and `app_track_content` as
+`SECURITY DEFINER` functions executable by `anon`. That is the point of them.
+Readers have no account — a reader is a device id — so the only way engagement
+reaches the database is an anonymous call, and the choice is between letting
+`anon` write the tables directly or letting it call two functions that check
+the reaction kind, check the device id, and refuse anything that is not
+published. Both tables have no insert policy at all, so the functions are the
+only door. Do not "fix" this by switching them to `SECURITY INVOKER`; that
+turns every like in the app into a silent no-op.
 
 ## Views
 
