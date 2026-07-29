@@ -564,15 +564,6 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                   onChange={(e) => set("summary", e.target.value)}
                   placeholder="Context to impact, no fluff…"
                 />
-                <SummaryAudioConverter
-                  summary={item.summary}
-                  lang={item.language}
-                  currentMediaUrl={item.mediaUrl}
-                  onAttachAudio={(url, durationSec) => {
-                    set("mediaUrl", url);
-                    set("durationSec", durationSec);
-                  }}
-                />
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
@@ -707,15 +698,6 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
               maxLength={kind === "article" ? ARTICLE_DESC_MAX : undefined}
               onChange={(e) => set("summary", e.target.value)}
               placeholder="Context to impact, no fluff…"
-            />
-            <SummaryAudioConverter
-              summary={item.summary}
-              lang={item.language}
-              currentMediaUrl={item.mediaUrl}
-              onAttachAudio={(url, durationSec) => {
-                set("mediaUrl", url);
-                set("durationSec", durationSec);
-              }}
             />
           </div>
           )}
