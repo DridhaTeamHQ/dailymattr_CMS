@@ -10,7 +10,8 @@
  * mappers below are the only place that translation lives.
  */
 
-import { mediaBlocker } from "./media";
+import { localMediaPath, mediaBlocker, rehostable } from "./media";
+import { MEDIA, uploadBlob } from "./storage";
 import { newsstudio, supabase } from "./supabase";
 import type {
   ArticleSelection,
@@ -396,6 +397,37 @@ export async function updateContent(id: string, patch: Partial<ContentItem>) {
  * gated by a database trigger, so a writer or QA cannot publish by calling the
  * API directly even if the UI let them.
  */
+/**
+ * Copies a clip still sitting in the CMS's own uploads folder into the media
+ * bucket, and points the row at it. Returns the new public URL.
+ *
+ * A copy rather than a fresh download: the bytes are on this machine and the
+ * browser can reach them, which also means it works for imports whose source
+ * URL has long expired.
+ */
+export async function hostLocalMedia(item: ContentItem): Promise<string> {
+  const path = localMediaPath(item.mediaUrl);
+  if (!path) return item.mediaUrl ?? "";
+
+  const res = await fetch(path);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 404
+        ? "The video file is no longer in the CMS uploads folder — re-import it before publishing."
+        : `Could not read the staged video file (HTTP ${res.status}).`,
+    );
+  }
+
+  const url = await uploadBlob(MEDIA, await res.blob(), item.kind);
+  // the cover pointed at the same local path on some rows
+  const coverIsLocal = !!item.coverUrl && !!localMediaPath(item.coverUrl);
+  await updateContent(item.id, {
+    mediaUrl: url,
+    ...(coverIsLocal ? { coverUrl: null } : {}),
+  });
+  return url;
+}
+
 export async function setContentStatus(
   id: string,
   status: ContentStatus,
@@ -413,7 +445,20 @@ export async function setContentStatus(
    * Checked here rather than in the review screen because this function is the
    * one path every publish goes through, wherever the button lives. */
   if (status === "published") {
-    const current = await getContentItem(id);
+    let current = await getContentItem(id);
+
+    /* Move a locally-staged clip into the bucket rather than refusing.
+     *
+     * There was a button for this, and a button is the wrong shape for it: the
+     * editor is told their video is on the wrong machine and asked to fix an
+     * infrastructure detail they had no part in creating. The bytes are
+     * reachable, the destination is known, and the moment it matters is right
+     * here — so it just happens. Only the failures they can actually act on
+     * are worth interrupting for. */
+    if (current && rehostable(current.mediaUrl)) {
+      current = { ...current, mediaUrl: await hostLocalMedia(current) };
+    }
+
     const blocker = current && mediaBlocker(current.kind, current.mediaUrl);
     if (blocker) throw new Error(blocker);
   }

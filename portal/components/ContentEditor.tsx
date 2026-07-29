@@ -11,8 +11,7 @@ import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SummaryAudioConverter } from "@/components/SummaryAudioConverter";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { isMediaFile, localMediaPath, mediaBlocker, rehostable } from "@/lib/media";
-import { MEDIA, uploadBlob } from "@/lib/storage";
+import { isMediaFile, mediaBlocker, rehostable } from "@/lib/media";
 import {
   createContent,
   getContentItem,
@@ -88,8 +87,6 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
-  const [rehosting, setRehosting] = useState(false);
-  const [rehostErr, setRehostErr] = useState<string | null>(null);
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => setCategories([]));
@@ -153,39 +150,6 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
       setScrapeErr("Error connecting to scraper service.");
     } finally {
       setScraping(false);
-    }
-  };
-
-  /* Copy a locally-staged clip into the bucket.
-   *
-   * The bytes are already on this machine and the browser can reach them, so
-   * this is a fetch-and-put rather than a fresh download from the source —
-   * which also means it works for the Instagram imports, whose original URLs
-   * are long expired. Saving is left to the editor: the field changes, they
-   * see it, they press Save like any other edit. */
-  const rehostMedia = async () => {
-    const path = localMediaPath(item?.mediaUrl);
-    if (!path || rehosting) return;
-    setRehosting(true);
-    setRehostErr(null);
-    try {
-      const res = await fetch(path);
-      if (!res.ok) {
-        throw new Error(
-          res.status === 404
-            ? "That file is no longer in the CMS uploads folder — re-import it."
-            : `Could not read the staged file (HTTP ${res.status}).`
-        );
-      }
-      const blob = await res.blob();
-      const url = await uploadBlob(MEDIA, blob, "qix");
-      set("mediaUrl", url);
-      // the cover pointed at the same local path on some rows
-      if (item?.coverUrl && localMediaPath(item.coverUrl)) set("coverUrl", null);
-    } catch (e) {
-      setRehostErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRehosting(false);
     }
   };
 
@@ -421,36 +385,18 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 aspectRatio="portrait"
               />
 
-              {/* The clip is real, and on the wrong machine.
-                  A dozen imports were staged into the CMS's own uploads folder
-                  and saved with that path, so they play here and nowhere else.
-                  The file is still fetchable from this browser, which makes
-                  the repair a copy rather than a re-download. */}
+              {/* Staged on this machine — moved on publish, not by hand.
+
+                  There was a button here asking the editor to fix an
+                  infrastructure detail they had no part in creating. The bytes
+                  are reachable and the destination is known, so publishing
+                  does it (see hostLocalMedia). This only says what will
+                  happen, so nobody wonders why the URL looks wrong. */}
               {rehostable(item.mediaUrl) && (
-                <div className="rounded-xl border border-amber/40 bg-amber/10 p-3 space-y-2">
-                  <p className="text-[11px] font-semibold text-ink">
-                    This video is stored on the CMS machine, so the app cannot
-                    fetch it. Move it to storage to make it playable.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={!editable || rehosting}
-                    onClick={rehostMedia}
-                    className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    {rehosting ? (
-                      <>
-                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Moving…
-                      </>
-                    ) : (
-                      <>Move to storage</>
-                    )}
-                  </button>
-                  {rehostErr && (
-                    <p className="text-[11px] font-semibold text-rose">{rehostErr}</p>
-                  )}
-                </div>
+                <p className="text-[11px] font-semibold text-faint">
+                  This clip is still on the CMS machine. It moves to storage
+                  automatically when you publish.
+                </p>
               )}
 
               {/* Why it cannot be published, said here rather than at the end. */}
