@@ -4,22 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  AudioLines,
-  Calendar,
-  Check,
-  Clapperboard,
-  Clock3,
-  Edit3,
-  Eye,
-  Image as ImageIcon,
-  Play,
-  Rocket,
-  ShieldCheck,
-  Trash2,
-  Undo2,
-  X,
-} from "lucide-react";
+import { AudioLines, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Trash2, Undo2, X } from "lucide-react";
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";

@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  Loader2,
-  Pause,
-  Play,
-  Settings2,
-  Square,
-  Volume2,
-} from "lucide-react";
+import { Check, Loader2, Pause, Play, Settings2, Square } from "lucide-react";
 import {
   generateAudioFromText,
   getAvailableVoices,
@@ -51,13 +43,16 @@ export function SummaryAudioConverter({
     const loadVoices = () => {
       const available = getAvailableVoices();
       setVoices(available);
-      if (available.length > 0 && !selectedVoice) {
-        const preferred =
-          available.find(
-            (v) => v.lang.startsWith(lang) || v.lang.startsWith("en")
-          ) || available[0];
-        setSelectedVoice(preferred);
-      }
+      if (available.length === 0) return;
+      const preferred =
+        available.find(
+          (v) => v.lang.startsWith(lang) || v.lang.startsWith("en")
+        ) || available[0];
+      // Decided against the current value rather than the one captured when
+      // this closure was made. Browsers fire onvoiceschanged well after the
+      // effect runs, and reading `selectedVoice` from the closure meant a voice
+      // chosen in the meantime looked unset — so the picker reset itself.
+      setSelectedVoice((current) => current ?? preferred);
     };
 
     loadVoices();

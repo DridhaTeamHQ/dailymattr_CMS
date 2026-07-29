@@ -19,6 +19,23 @@ function Bone({
   return <div className={`skeleton-bone ${className}`} style={style} />;
 }
 
+/**
+ * A repeatable stand-in for Math.random(), keyed on position.
+ *
+ * Bones were sized with Math.random() during render, which is two bugs at once:
+ * the server renders one set of widths and the client another, so React reports
+ * a hydration mismatch and repaints; and every re-render reshuffles them, so a
+ * loading skeleton twitches while it waits.
+ *
+ * The point of the variation is only that bones should not look mechanically
+ * identical, and a hash of the index gives that while staying the same on both
+ * sides of hydration and across renders.
+ */
+function jitter(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x); // 0 … 1
+}
+
 /* ── Shared section header placeholder ─────────────────────────────── */
 function HeaderBone({ hasButton = true }: { hasButton?: boolean }) {
   return (
@@ -380,7 +397,7 @@ export function UsersSkeleton() {
                 <Bone
                   key={j}
                   className="flex-1"
-                  style={{ height: `${20 + Math.random() * 40}px` }}
+                  style={{ height: `${20 + jitter(j + 1) * 40}px` }}
                 />
               ))}
             </div>
@@ -422,7 +439,7 @@ export function SettingsSkeleton() {
             <Bone
               key={i}
               className="h-9 rounded-full"
-              style={{ width: `${60 + Math.random() * 50}px` }}
+              style={{ width: `${60 + jitter(i + 7) * 50}px` }}
             />
           ))}
         </div>

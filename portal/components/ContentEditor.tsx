@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Mic, Radio, Save, Send, Sparkles, Square, Volume2 } from "lucide-react";
+import { ArrowLeft, Radio, Save, Send, Sparkles } from "lucide-react";
 import MediaDrop from "@/components/MediaDrop";
 import PixComposer from "@/components/PixComposer";
 import { PixBezel } from "@/components/PixPoster";
 import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SummaryAudioConverter } from "@/components/SummaryAudioConverter";
 import { SectionHeader, StatusPill } from "@/components/ui";
-import { can, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { isMediaFile, mediaBlocker, rehostable } from "@/lib/media";
 import {
