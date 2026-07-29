@@ -54,7 +54,8 @@ export default function DashboardPage() {
     const engagement =
       user && can.seeStats(user.role)
         ? await listContentStats(
-            selectionsAndNews.selections.map((s) => s.articleId)
+            selectionsAndNews.selections.map((s) => s.articleId),
+            content.filter((c) => c.status === "published").map((c) => c.id)
           )
         : new Map<string, ContentStats>();
 

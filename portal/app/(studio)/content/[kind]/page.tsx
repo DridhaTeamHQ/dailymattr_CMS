@@ -36,6 +36,7 @@ import {
   KIND_META,
   type ContentItem,
   type ContentKind,
+  type ContentStats,
   type ContentStatus,
 } from "@/lib/types";
 
@@ -118,38 +119,51 @@ function KindList() {
   const { data, error, refetch } = useQuery(async () => {
     if (!kind) return null;
     const users = await listUsers();
-    /* Only asked for by the roles allowed to see it. RLS would refuse anyone
-       else anyway — this just avoids a pointless round trip, and avoids
-       logging a permission error for a request we knew would fail. */
-    const stats = user && can.seeStats(user.role) ? await listContentStats() : new Map();
 
-    if (kind === "pix") {
-      const bucket: ContentBucket =
-        tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
-      const [pix, counts] = await Promise.all([
-        listContentPage("pix", { page, size, bucket }),
-        countContentByKind("pix"),
-      ]);
-      return { users, stats, rows: pix.rows, total: pix.total, counts, library: pix.rows };
-    }
+    const page$ = async () => {
+      if (kind === "pix") {
+        const bucket: ContentBucket =
+          tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
+        const [pix, counts] = await Promise.all([
+          listContentPage("pix", { page, size, bucket }),
+          countContentByKind("pix"),
+        ]);
+        return { rows: pix.rows, total: pix.total, counts, library: pix.rows };
+      }
 
-    const items = await listContentByKind(kind);
-    const queue = items.filter((c) => c.status === "in_review");
-    const feed = items.filter((c) => c.status === "published");
-    const visible = tab === "queue" ? queue : tab === "feed" ? feed : items;
-    return {
-      users,
-      stats,
-      rows: pageSlice(visible, page, size),
-      total: visible.length,
-      counts: {
-        all: items.length,
-        inReview: queue.length,
-        published: feed.length,
-      },
-      // Next/previous in the Trax player walk the library, not the page.
-      library: items,
+      const items = await listContentByKind(kind);
+      const queue = items.filter((c) => c.status === "in_review");
+      const feed = items.filter((c) => c.status === "published");
+      const visible = tab === "queue" ? queue : tab === "feed" ? feed : items;
+      return {
+        rows: pageSlice(visible, page, size),
+        total: visible.length,
+        counts: {
+          all: items.length,
+          inReview: queue.length,
+          published: feed.length,
+        },
+        // Next/previous in the Trax player walk the library, not the page.
+        library: items,
+      };
     };
+
+    const base = await page$();
+
+    /* After the rows, not before: comment counts are asked for by id, so this
+       needs to know what is on screen. Only for the roles allowed to see it —
+       RLS would refuse anyone else anyway, and this avoids both a pointless
+       round trip and a logged permission error for a request we knew would
+       fail. Just the published ones, since only those carry a strip. */
+    const stats =
+      user && can.seeStats(user.role)
+        ? await listContentStats(
+            [],
+            base.rows.filter((c) => c.status === "published").map((c) => c.id)
+          )
+        : new Map<string, ContentStats>();
+
+    return { users, stats, ...base };
   }, [kind, page, size, tab]);
 
   const lastPage = data ? pageCount(data.total, size) : 1;
@@ -432,7 +446,6 @@ function KindList() {
                     {showStats && c.status === "published" && (
                       <StatsStrip
                         stats={stats.get(statKey("cms", c.id))}
-                        commentsSupported={false}
                         className="mt-1.5 justify-center px-1"
                       />
                     )}

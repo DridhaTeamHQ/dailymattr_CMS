@@ -38,7 +38,7 @@ import { StatsStrip } from "@/components/StatsStrip";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { ArticlesSkeleton } from "@/components/PageSkeleton";
-import type { NewsStudioArticle } from "@/lib/types";
+import type { ContentStats, NewsStudioArticle } from "@/lib/types";
 
 type Tab = "newsstudio" | "cms" | "feed";
 
@@ -84,19 +84,24 @@ function ArticlesTabs() {
     /* Stats are the desk's, not the writer's — see `can.seeStats`. Asked for
        only when they will be shown, so a writer's page doesn't spend a round
        trip fetching numbers RLS would hand back as zeros anyway. */
-    const [selections, written, users, stats] = await Promise.all([
+    const [selections, written, users] = await Promise.all([
       listSelections(),
       listContentByKind("article"),
       listUsers(),
-      user && can.seeStats(user.role)
-        ? listSelections().then((sel) =>
-            listContentStats(sel.map((s) => s.articleId))
-          )
-        : new Map(),
     ]);
-    const feedArticles = await listNewsStudioByIds(
-      selections.map((s) => s.articleId)
-    );
+
+    /* After the lists, because comment counts are asked for by id and live in
+       whichever project owns the story — DB A for the feed, here for ours. */
+    const [feedArticles, stats] = await Promise.all([
+      listNewsStudioByIds(selections.map((s) => s.articleId)),
+      user && can.seeStats(user.role)
+        ? listContentStats(
+            selections.map((s) => s.articleId),
+            written.filter((c) => c.status === "published").map((c) => c.id)
+          )
+        : new Map<string, ContentStats>(),
+    ]);
+
     return { selections, written, users, feedArticles, stats };
   });
 
@@ -684,7 +689,6 @@ function ArticlesTabs() {
                       {showStats && c.status === "published" && (
                         <StatsStrip
                           stats={data.stats.get(statKey("cms", c.id))}
-                          commentsSupported={false}
                           className="mt-1.5"
                         />
                       )}

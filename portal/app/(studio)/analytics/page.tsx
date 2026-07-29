@@ -264,25 +264,20 @@ function Row({
         </div>
 
         {COLS.map((c) => {
-          /* A format with no comment thread shows a dash. Printing 0 would
-             invite the reader to compare it with a real 0 next to it. */
-          const na = c.key === "comments" && !row.commentsSupported;
           const n = row.stats[c.key];
           return (
             <span
               key={c.key}
-              title={na ? "This format has no comment thread." : c.label}
+              title={c.label}
               className={`hidden w-14 text-center text-[13px] font-bold tabular-nums md:block ${
-                na
-                  ? "text-faint"
-                  : sort === c.key
-                    ? "text-accent"
-                    : n > 0
-                      ? "text-ink"
-                      : "text-faint"
+                sort === c.key
+                  ? "text-accent"
+                  : n > 0
+                    ? "text-ink"
+                    : "text-faint"
               }`}
             >
-              {na ? "—" : fmt(n)}
+              {fmt(n)}
             </span>
           );
         })}

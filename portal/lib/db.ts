@@ -573,7 +573,8 @@ export const statKey = (source: StatsSource, id: string) => `${source}:${id}`;
  * entry as zeros, which is the same answer with less to carry over the wire.
  */
 export async function listContentStats(
-  pipelineIds: string[] = []
+  pipelineIds: string[] = [],
+  cmsIds: string[] = []
 ): Promise<Map<string, ContentStats>> {
   const out = new Map<string, ContentStats>();
   try {
@@ -613,21 +614,28 @@ export async function listContentStats(
      shipped — comments written before that were invisible, and a comment later
      deleted stayed counted forever. `app_comments` in DB A is the real answer
      and has been all along, so ask it. */
-  const counts = await listCommentCounts(pipelineIds);
-  for (const [id, n] of counts) {
-    const key = statKey("pipeline", id);
-    const row = out.get(key);
-    if (row) {
-      row.comments = n;
-    } else {
-      // Commented on but otherwise untouched: no engagement row exists, and a
-      // comment is still something worth showing.
-      out.set(key, {
-        ...EMPTY_STATS,
-        source: "pipeline",
-        contentId: id,
-        comments: n,
-      });
+  /* Two threads tables, one per project, because each lives with the content
+     it hangs off — DB A's `app_comments` for pipeline articles, DB B's
+     `content_comments` for ours. Asked together; merged by source. */
+  const [fromPipeline, fromCms] = await Promise.all([
+    listCommentCounts(pipelineIds),
+    listCmsCommentCounts(cmsIds),
+  ]);
+
+  for (const [source, counts] of [
+    ["pipeline", fromPipeline],
+    ["cms", fromCms],
+  ] as const) {
+    for (const [id, n] of counts) {
+      const key = statKey(source, id);
+      const row = out.get(key);
+      if (row) {
+        row.comments = n;
+      } else {
+        // Commented on but otherwise untouched: no engagement row exists, and
+        // a comment is still something worth showing.
+        out.set(key, { ...EMPTY_STATS, source, contentId: id, comments: n });
+      }
     }
   }
 
@@ -655,17 +663,49 @@ export const EMPTY_STATS: ContentStats = {
 };
 
 /**
- * How many comments each article actually has, straight from DB A.
- *
- * Only pipeline articles can be commented on — `commentsSupported` in the
- * app's lib/comments refuses CMS ids, because `app_comments.article_id` is a
- * uuid keyed to the pipeline's own articles table. So a Pix or a Qix showing
- * zero here is not indifference, it is a format with no thread, and the strip
- * says so rather than printing a nought.
+ * How many comments each pipeline article has, straight from DB A.
  *
  * Resolves empty when DB A is not configured, rather than taking the page down
  * with it — the rest of the numbers are still worth showing.
  */
+/**
+ * How many comments each CMS item has, from this project's own table.
+ *
+ * The sibling of `listCommentCounts`. Pix, Qix, Trax and desk-written articles
+ * could not be commented on at all until migration 13 — `app_comments` in DB A
+ * is keyed to the pipeline's articles table, so their ids were refused and the
+ * comment silently discarded. `content_comments` is the other half.
+ */
+export async function listCmsCommentCounts(
+  ids: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const valid = [...new Set(ids)].filter((id) => UUID_RE.test(id));
+  if (valid.length === 0) return out;
+
+  const CHUNK = 200;
+  try {
+    for (let i = 0; i < valid.length; i += CHUNK) {
+      const { data, error } = await supabase.rpc("app_content_comment_counts", {
+        p_ids: valid.slice(i, i + CHUNK),
+      });
+      if (error) {
+        // Absent until migration 13 is applied; the rest still renders.
+        if (!/does not exist/i.test(error.message)) {
+          console.warn("[comments/cms]", error.message);
+        }
+        return out;
+      }
+      for (const r of (data ?? []) as { content_id: string; n: number }[]) {
+        out.set(r.content_id, Number(r.n ?? 0));
+      }
+    }
+  } catch (e) {
+    console.warn("[comments/cms] unreachable:", e instanceof Error ? e.message : e);
+  }
+  return out;
+}
+
 export async function listCommentCounts(
   ids: string[]
 ): Promise<Map<string, number>> {
