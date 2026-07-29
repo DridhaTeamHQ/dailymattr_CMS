@@ -12,13 +12,16 @@ import {
 import ActivityChart from "@/components/ActivityChart";
 import FormatChart from "@/components/FormatChart";
 import { Avatar, FactBadge, Pill, SectionHeader } from "@/components/ui";
-import { useAuth } from "@/lib/auth";
+import { can, useAuth } from "@/lib/auth";
 import {
   getNewsStudioByIds,
   listAudit,
   listContent,
+  listContentStats,
   listSelections,
+  statKey,
 } from "@/lib/db";
+import { StatsStrip } from "@/components/StatsStrip";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { DashboardSkeleton } from "@/components/PageSkeleton";
@@ -31,7 +34,7 @@ export default function DashboardPage() {
   const { data, error } = useQuery(async () => {
     // All four queries fire in parallel — no waiting for selections before
     // fetching newsstudio. The join happens client-side after everything lands.
-    const [content, audit, selectionsAndNews] = await Promise.all([
+    const [content, audit, selectionsAndNews, engagement] = await Promise.all([
       listContent(),
       listAudit(40),
       // Selections + their NewsStudio articles: selections is fast (tiny table)
@@ -42,12 +45,16 @@ export default function DashboardPage() {
         );
         return { selections, newsstudio };
       }),
+      /* Only for the two roles allowed to see it. RLS would hand a writer
+         zeros anyway, so asking would be a round trip that buys nothing. */
+      user && can.seeStats(user.role) ? listContentStats() : new Map(),
     ]);
     return {
       content,
       audit,
       selections: selectionsAndNews.selections,
       newsstudio: selectionsAndNews.newsstudio,
+      engagement,
     };
   });
 
@@ -94,6 +101,8 @@ export default function DashboardPage() {
       tone: "bg-violet-tint text-violet",
     },
   ];
+
+  const showStats = can.seeStats(user.role);
 
   const byKind = KINDS.map((k) => ({
     kind: k,
@@ -250,6 +259,17 @@ export default function DashboardPage() {
                   <p className="mt-1 text-[11px] text-faint">
                     {art.source} · {timeAgo(art.publishedAt)}
                   </p>
+                  {/* Everything in this list is in the app feed, so there is
+                      no "not published yet" case to distinguish — a zero here
+                      really does mean nobody has touched it. */}
+                  {showStats && (
+                    <StatsStrip
+                      stats={data.engagement.get(
+                        statKey("pipeline", art.id)
+                      )}
+                      className="mt-1.5"
+                    />
+                  )}
                 </div>
               </div>
             );

@@ -141,7 +141,11 @@ export interface UserPerformance {
 }
 
 /** One row of `content_stats` — engagement counted by device, not by person. */
+/** Which project an engaged-with id belongs to. See migration 11. */
+export type StatsSource = "cms" | "pipeline";
+
 export interface ContentStats {
+  source: StatsSource;
   contentId: string;
   likes: number;
   dislikes: number;

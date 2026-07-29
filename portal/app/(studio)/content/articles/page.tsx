@@ -25,6 +25,7 @@ import {
   approveArticle,
   listContentByKind,
   listContentStats,
+  statKey,
   listNewsStudio,
   listNewsStudioByIds,
   listSelections,
@@ -412,6 +413,17 @@ function ArticlesTabs() {
                         </span>
                       </div>
 
+                      {/* Only once it is in the feed. The grid is mostly
+                          candidates nobody has approved, and zeros on those
+                          would read as "readers ignored it" when the truth is
+                          that readers were never shown it. */}
+                      {showStats && approved && (
+                        <StatsStrip
+                          stats={data.stats.get(statKey("pipeline", n.id))}
+                          className="mt-2"
+                        />
+                      )}
+
                       {approver && (
                         <div className="mt-3 flex gap-2 border-t border-line pt-3">
                           {approved ? (
@@ -581,6 +593,17 @@ function ArticlesTabs() {
                           </button>
                         </div>
                       )}
+
+                      {/* Full width so flex-wrap drops it onto its own line
+                          rather than squeezing the title. Every row here is
+                          in the feed by definition, so there is no published
+                          check to make — it is live or it is not on screen. */}
+                      {showStats && (
+                        <StatsStrip
+                          stats={data.stats.get(statKey("pipeline", art.id))}
+                          className="w-full"
+                        />
+                      )}
                     </motion.div>
                   );
                 })}
@@ -656,7 +679,7 @@ function ArticlesTabs() {
                           indifference rather than as "not out yet". */}
                       {showStats && c.status === "published" && (
                         <StatsStrip
-                          stats={data.stats.get(c.id)}
+                          stats={data.stats.get(statKey("cms", c.id))}
                           className="mt-1.5"
                         />
                       )}

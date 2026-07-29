@@ -21,6 +21,7 @@ import {
   deleteContent,
   listContentByKind,
   listContentStats,
+  statKey,
   listContentPage,
   listUsers,
   setContentStatus,
@@ -431,7 +432,7 @@ function KindList() {
                         zeros would say nothing. */}
                     {showStats && c.status === "published" && (
                       <StatsStrip
-                        stats={stats.get(c.id)}
+                        stats={stats.get(statKey("cms", c.id))}
                         className="mt-1.5 justify-center px-1"
                       />
                     )}

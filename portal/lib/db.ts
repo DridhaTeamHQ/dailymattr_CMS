@@ -21,6 +21,7 @@ import type {
   ContentItem,
   ContentKind,
   ContentStats,
+  StatsSource,
   ContentStatus,
   NewsStudioArticle,
   UserPerformance,
@@ -549,13 +550,27 @@ export async function updateSelection(
 // ── engagement ──────────────────────────────────────────────────────
 
 /**
- * Reader engagement, keyed by content id.
+ * The key a stats lookup uses.
+ *
+ * Ids come from two different Supabase projects, so an id alone is not a key —
+ * `content_items` and NewsStudio `articles` mint uuids independently and
+ * nothing stops them colliding. Cheap to disambiguate here; confusing to debug
+ * if we ever didn't.
+ */
+export const statKey = (source: StatsSource, id: string) => `${source}:${id}`;
+
+/**
+ * Reader engagement, keyed by `statKey(source, id)`.
  *
  * Returns an empty map rather than throwing when the caller is not allowed to
  * see it, or when the migration has not been applied yet — the Studio worked
  * before these numbers existed and has to keep working if they are absent.
  * The permission itself is enforced by RLS; `can.seeStats` only decides
  * whether we bother asking.
+ *
+ * An item nobody has touched has no row at all, since the view is built from
+ * the engagement tables rather than from the content. Callers render a missing
+ * entry as zeros, which is the same answer with less to carry over the wire.
  */
 export async function listContentStats(): Promise<Map<string, ContentStats>> {
   const out = new Map<string, ContentStats>();
@@ -569,7 +584,9 @@ export async function listContentStats(): Promise<Map<string, ContentStats>> {
       return out;
     }
     for (const r of (data ?? []) as Row[]) {
-      out.set(r.content_id as string, {
+      const source = (r.source as StatsSource) ?? "cms";
+      out.set(statKey(source, r.content_id as string), {
+        source,
         contentId: r.content_id as string,
         likes: Number(r.likes ?? 0),
         dislikes: Number(r.dislikes ?? 0),
