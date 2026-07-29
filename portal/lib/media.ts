@@ -151,6 +151,16 @@ export function mediaBlocker(
   if (!s) {
     return `This ${kind} has no ${noun} on it. Import or upload one before publishing — a reader would get a blank card.`;
   }
+  /* Checked before the other address faults, because it is the only one with a
+     fix rather than a diagnosis — and the fix is one button. The earlier
+     wording here said "re-import it", which was true when the only way out was
+     downloading the clip again, and became actively misleading the moment the
+     file could simply be moved. It plays perfectly in the Studio, which is
+     precisely what makes the refusal look wrong: the CMS is the machine the
+     file is on. */
+  if (rehostable(s)) {
+    return `That ${noun} is still on this machine — it plays here and nowhere else. Open this ${kind} and press "Move to storage", then save.`;
+  }
   if (isExpiringUrl(s)) {
     return `That ${noun} link is a temporary signed URL and will be dead within hours. Import the file instead.`;
   }
