@@ -27,8 +27,8 @@ export default function MediaDrop({
   value,
   onChange,
   onDurationChange,
-  accept = "image/*,video/*",
-  hint = "Drop MP4/WebM video file",
+  accept = "image/*",
+  hint = "Drop JPG, PNG, or WebP image file",
   aspectRatio = "standard",
 }: {
   value: string | null;

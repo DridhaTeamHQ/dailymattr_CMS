@@ -80,7 +80,7 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
   const [item, setItem] = useState<ContentItem | null>(null);
   const [saved, setSaved] = useState<null | "draft" | "review">(null);
   const [placement, setPlacement] = useState<PixPlacement>("list");
-  const [audioMode, setAudioMode] = useState<"script" | "upload">("script");
+  const [audioMode, setAudioMode] = useState<"script" | "upload">("upload");
   const [ytUrl, setYtUrl] = useState("");
   const [scraping, setScraping] = useState(false);
   const [scrapeErr, setScrapeErr] = useState<string | null>(null);
@@ -802,6 +802,8 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             <MediaDrop
               value={item.coverUrl}
               onChange={(v) => set("coverUrl", v)}
+              accept="image/*"
+              hint="Drop JPG, PNG, or WebP image file"
             />
             <input
               className="field mt-2"
