@@ -10,7 +10,7 @@ import { PixBezel } from "@/components/PixPoster";
 import SourceImport, { type ImportedArticle } from "@/components/SourceImport";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
-import { localMediaPath, mediaBlocker, rehostable } from "@/lib/media";
+import { isMediaFile, localMediaPath, mediaBlocker, rehostable } from "@/lib/media";
 import { MEDIA, uploadBlob } from "@/lib/storage";
 import {
   createContent,
@@ -400,8 +400,18 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
                 value={item.mediaUrl || item.coverUrl}
                 onChange={(v) => {
                   set("mediaUrl", v);
-                  set("coverUrl", v);
-                  if (!v) set("durationSec", null);
+                  /* The cover is a *picture*. This used to copy the value
+                     across unconditionally, so uploading an MP4 set
+                     cover_url to the MP4 — and the app, which renders the
+                     cover in an <Image>, got a video file and drew nothing.
+                     A poster that fails silently is exactly what "I just see
+                     a static image" looks like from the other end. */
+                  if (!v) {
+                    set("coverUrl", null);
+                    set("durationSec", null);
+                  } else if (!isMediaFile(v) || /\.(png|jpe?g|webp|avif)(\?|#|$)/i.test(v)) {
+                    set("coverUrl", v);
+                  }
                 }}
                 onDurationChange={(dur) => set("durationSec", dur)}
                 accept="video/*,image/*"
