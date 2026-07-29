@@ -20,6 +20,7 @@ import type {
   CmsUser,
   ContentItem,
   ContentKind,
+  ContentComment,
   ContentStats,
   StatsSource,
   ContentStatus,
@@ -668,6 +669,90 @@ export const EMPTY_STATS: ContentStats = {
  * Resolves empty when DB A is not configured, rather than taking the page down
  * with it — the rest of the numbers are still worth showing.
  */
+/* The Studio is not a device, but the thread RPCs take one — it decides the
+   `liked_by_me` flag, which the desk has no use for. A constant, inside the
+   8–64 length the functions check, keeps that honest: the desk never appears
+   to have liked anything. */
+const DESK_DEVICE = "cms-studio-desk";
+
+/**
+ * One story's comments, read from whichever project holds its thread.
+ *
+ * Wire articles keep theirs in DB A; ours live here (migration 13). Both RPCs
+ * return the same columns in the same order, so one mapper covers both.
+ *
+ * Resolves empty rather than throwing: a thread that will not load should cost
+ * the reader of an analytics page the thread, not the page.
+ */
+export async function listCommentsFor(
+  source: StatsSource,
+  id: string,
+  limit = 200
+): Promise<ContentComment[]> {
+  const shape = (r: Row): ContentComment => ({
+    id: r.id as string,
+    parentId: (r.parent_id as string | null) ?? null,
+    deviceId: r.device_id as string,
+    body: r.body as string,
+    createdAt: r.created_at as string,
+    likeCount: Number(r.like_count ?? 0),
+    replyCount: Number(r.reply_count ?? 0),
+  });
+
+  try {
+    if (source === "pipeline") {
+      if (!newsstudio || !UUID_RE.test(id)) return [];
+      const { data, error } = await newsstudio.rpc("app_comments_for", {
+        p_article: id,
+        p_device: DESK_DEVICE,
+        p_limit: limit,
+      });
+      if (error) {
+        console.warn("[comments]", error.message);
+        return [];
+      }
+      return ((data ?? []) as Row[]).map(shape);
+    }
+
+    const { data, error } = await supabase.rpc("app_content_comments_for", {
+      p_content: id,
+      p_device: DESK_DEVICE,
+      p_limit: limit,
+    });
+    if (error) {
+      // Absent until migration 13 is applied.
+      if (!/does not exist/i.test(error.message)) {
+        console.warn("[comments/cms]", error.message);
+      }
+      return [];
+    }
+    return ((data ?? []) as Row[]).map(shape);
+  } catch (e) {
+    console.warn("[comments] unreachable:", e instanceof Error ? e.message : e);
+    return [];
+  }
+}
+
+/**
+ * The same pseudonym the reader sees in the app.
+ *
+ * There are no accounts, only a device id, and a thread reads badly when
+ * everyone is "Anonymous". Copied from the app's `nameFor` character for
+ * character — including the unsigned shifts, since a signed one turns any hash
+ * past 2^31 negative and yields "Curious undefined" — so the desk and the
+ * reader are looking at the same names.
+ */
+const ADJECTIVES = ["Quiet", "Curious", "Sharp", "Calm", "Bright", "Steady", "Keen", "Swift"];
+const NOUNS = ["Reader", "Owl", "Falcon", "Otter", "Heron", "Fox", "Crane", "Lark"];
+
+export function readerName(deviceId: string): string {
+  let h = 0;
+  for (let i = 0; i < deviceId.length; i++) {
+    h = (h * 31 + deviceId.charCodeAt(i)) >>> 0;
+  }
+  return `${ADJECTIVES[h % ADJECTIVES.length]} ${NOUNS[(h >>> 5) % NOUNS.length]}`;
+}
+
 /**
  * How many comments each CMS item has, from this project's own table.
  *

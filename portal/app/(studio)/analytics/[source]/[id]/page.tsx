@@ -20,6 +20,8 @@ import { can, useAuth } from "@/lib/auth";
 import { useQuery } from "@/lib/useQuery";
 import { timeAgo } from "@/lib/store";
 import { KIND_LABEL, loadAnalytics } from "@/lib/analytics";
+import { listCommentsFor, readerName } from "@/lib/db";
+import type { ContentComment, StatsSource } from "@/lib/types";
 
 /* One story, in full.
  *
@@ -41,6 +43,15 @@ export default function AnalyticsDetailPage() {
   const params = useParams<{ source: string; id: string }>();
 
   const { data, error } = useQuery(() => loadAnalytics());
+
+  /* Its own query rather than part of loadAnalytics: the list page needs
+     counts for everything and would otherwise fetch every thread in the
+     library to render numbers it already has. */
+  const { data: comments } = useQuery(
+    () =>
+      listCommentsFor(params.source as StatsSource, params.id).catch(() => []),
+    [params.source, params.id]
+  );
 
   const row = useMemo(
     () =>
@@ -158,15 +169,36 @@ export default function AnalyticsDetailPage() {
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {primary.map(([Icon, label, n]) => (
-          <div key={label} className="card p-4">
-            <Icon size={14} className="mb-2 text-faint" />
-            <div className="text-2xl font-extrabold tabular-nums">{fmt(n)}</div>
-            <div className="mt-0.5 text-[11px] font-semibold text-muted">
-              {label}
+        {primary.map(([Icon, label, n]) => {
+          /* The comments tile is the one number with something behind it, so
+             it behaves like it: clicking goes to the thread rather than
+             leaving you to scroll for it. */
+          const body = (
+            <>
+              <Icon size={14} className="mb-2 text-faint" />
+              <div className="text-2xl font-extrabold tabular-nums">
+                {fmt(n)}
+              </div>
+              <div className="mt-0.5 text-[11px] font-semibold text-muted">
+                {label}
+              </div>
+            </>
+          );
+          return label === "Comments written" ? (
+            <a
+              key={label}
+              href="#comments"
+              className="card card-hover block p-4"
+              title="Read the thread"
+            >
+              {body}
+            </a>
+          ) : (
+            <div key={label} className="card p-4">
+              {body}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mb-5 grid gap-3 md:grid-cols-2">
@@ -184,7 +216,9 @@ export default function AnalyticsDetailPage() {
         ))}
       </div>
 
-      <div className="card p-5">
+      <CommentThread comments={comments} written={s.comments} />
+
+      <div className="card mt-5 p-5">
         <h2 className="mb-3 text-sm font-bold">Rates</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {rates.map(([label, value, of]) => (
@@ -200,6 +234,104 @@ export default function AnalyticsDetailPage() {
         </p>
       </div>
     </>
+  );
+}
+
+/* The comments themselves, not just how many.
+ *
+ * A count tells the desk something happened; the thread tells them what. Roots
+ * newest first with their replies underneath — the order a conversation is
+ * read, rather than the order rows came back. */
+function CommentThread({
+  comments,
+  written,
+}: {
+  comments: ContentComment[] | null;
+  written: number;
+}) {
+  const rows = (() => {
+    const all = comments ?? [];
+    const roots = all.filter((c) => !c.parentId);
+    const repliesBy = new Map<string, ContentComment[]>();
+    for (const c of all) {
+      if (!c.parentId) continue;
+      repliesBy.set(c.parentId, [...(repliesBy.get(c.parentId) ?? []), c]);
+    }
+    const out: { c: ContentComment; isReply: boolean }[] = [];
+    for (const r of roots.slice().reverse()) {
+      out.push({ c: r, isReply: false });
+      for (const rep of repliesBy.get(r.id) ?? []) out.push({ c: rep, isReply: true });
+    }
+    return out;
+  })();
+
+  return (
+    <div id="comments" className="card scroll-mt-6 p-5">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-bold">
+        <MessageCircle size={14} className="text-faint" />
+        Comments
+        {rows.length > 0 && (
+          <span className="text-faint tabular-nums">{rows.length}</span>
+        )}
+      </h2>
+
+      {comments === null ? (
+        <div className="space-y-2">
+          {Array.from({ length: 2 }, (_, i) => (
+            <div key={i} className="h-12 animate-pulse rounded-xl bg-canvas" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-[13px] text-muted">
+          {/* A count with no thread behind it means the comments were removed
+              after the fact, which is worth saying rather than showing an
+              empty box that looks like a bug. */}
+          {written > 0
+            ? "The thread is empty now — these comments have since been removed."
+            : "Nobody has commented yet."}
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {rows.map(({ c, isReply }) => (
+            <div
+              key={c.id}
+              className={`flex gap-3 ${isReply ? "pl-6" : ""}`}
+            >
+              <span
+                className={`mt-0.5 flex shrink-0 items-center justify-center rounded-full bg-accent font-bold text-white ${
+                  isReply ? "h-6 w-6 text-[10px]" : "h-7 w-7 text-[11px]"
+                }`}
+              >
+                {readerName(c.deviceId).slice(0, 1)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-[12px] font-bold">
+                    {readerName(c.deviceId)}
+                  </span>
+                  <span className="text-[11px] text-faint">
+                    {timeAgo(c.createdAt)}
+                  </span>
+                  {c.likeCount > 0 && (
+                    <span className="text-[11px] text-faint tabular-nums">
+                      {c.likeCount} {c.likeCount === 1 ? "like" : "likes"}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[13px] leading-snug break-words">
+                  {c.body}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-4 text-[11px] text-faint">
+        Readers are anonymous — the names are generated from a device id, and
+        the same reader keeps the same one.
+      </p>
+    </div>
   );
 }
 

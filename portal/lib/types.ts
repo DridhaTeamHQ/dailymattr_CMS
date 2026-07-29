@@ -161,6 +161,17 @@ export interface ContentStats {
   lastAt: string | null;
 }
 
+/** One comment on a story, from whichever project holds its thread. */
+export interface ContentComment {
+  id: string;
+  parentId: string | null;
+  deviceId: string;
+  body: string;
+  createdAt: string;
+  likeCount: number;
+  replyCount: number;
+}
+
 export interface AuditEntry {
   id: string;
   actorId: string;
