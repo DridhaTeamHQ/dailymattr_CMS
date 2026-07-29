@@ -201,6 +201,38 @@ async function main() {
     check("rate limits a burst", sawLimit, "26 requests without a 429");
   }
 
+  // ── every outbound-fetching route is metered ──────────────────────
+  //
+  // These three were not. pix/scrape is the one that mattered: it fetches the
+  // listing page and then enriches twelve links in parallel at two megabytes
+  // each, so one unmetered call is thirteen outbound requests.
+  //
+  // Invalid input on purpose — the limiter runs before validation, so quota is
+  // consumed without anything leaving the building.
+  console.log("\nmetering");
+  {
+    const burst = async (name, n, fire) => {
+      let sawLimit = false;
+      for (let i = 0; i < n && !sawLimit; i++) {
+        if ((await fire(i)).status === 429) sawLimit = true;
+      }
+      check(`${name} is rate limited`, sawLimit, `${n} requests, never limited`);
+    };
+
+    await burst("/api/pix/scrape", 8, () =>
+      post("/api/pix/scrape", {}, { "X-Forwarded-For": "198.18.0.1" })
+    );
+    await burst("/api/pix/images", 25, () =>
+      get("/api/pix/images", { "X-Forwarded-For": "198.18.0.2" })
+    );
+    // The proxy's ceiling is deliberately high — one image search legitimately
+    // fires two dozen of these — so this only proves a ceiling exists.
+    check(
+      "/api/pix/image rejects a missing url before fetching",
+      (await get("/api/pix/image", { "X-Forwarded-For": "198.18.0.3" })).status === 400
+    );
+  }
+
   // ── rate limiting cannot be shrugged off with a header ────────────
   //
   // x-forwarded-for reads "client, proxy1, proxy2" and each proxy appends the
