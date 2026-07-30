@@ -14,12 +14,11 @@ import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
-import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
+import { PAGE_SIZES, clampPage, pageCount } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import {
   countContentByKind,
   deleteContent,
-  listContentByKind,
   listContentStats,
   statKey,
   listContentPage,
@@ -108,47 +107,21 @@ function KindList() {
   const size = PAGE_SIZES.pixGrid;
 
   /*
-   * Pix is paged by the database; Qix and Trax still load their library and
-   * page it in the browser.
-   *
-   * Pix is the one that grows — it is the format the newsroom produces most —
-   * and it is the only one asked to scale here. The two paths are kept behind
-   * one shape (`rows`, `total`, `counts`) so everything below this point reads
-   * the same either way.
+   * Every library is paged by the database — the tab filter, the slice, and
+   * the three tab counts all resolve there, so the browser holds a page
+   * rather than a library however large the table gets.
    */
   const { data, error, refetch } = useQuery(async () => {
     if (!kind) return null;
     const users = await listUsers();
 
-    const page$ = async () => {
-      if (kind === "pix") {
-        const bucket: ContentBucket =
-          tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
-        const [pix, counts] = await Promise.all([
-          listContentPage("pix", { page, size, bucket }),
-          countContentByKind("pix"),
-        ]);
-        return { rows: pix.rows, total: pix.total, counts, library: pix.rows };
-      }
-
-      const items = await listContentByKind(kind);
-      const queue = items.filter((c) => c.status === "in_review");
-      const feed = items.filter((c) => c.status === "published");
-      const visible = tab === "queue" ? queue : tab === "feed" ? feed : items;
-      return {
-        rows: pageSlice(visible, page, size),
-        total: visible.length,
-        counts: {
-          all: items.length,
-          inReview: queue.length,
-          published: feed.length,
-        },
-        // Next/previous in the Trax player walk the library, not the page.
-        library: items,
-      };
-    };
-
-    const base = await page$();
+    const bucket: ContentBucket =
+      tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
+    const [slice, counts] = await Promise.all([
+      listContentPage(kind, { page, size, bucket }),
+      countContentByKind(kind),
+    ]);
+    const base = { rows: slice.rows, total: slice.total, counts };
 
     /* After the rows, not before: comment counts are asked for by id, so this
        needs to know what is on screen. Only for the roles allowed to see it —
@@ -180,7 +153,7 @@ function KindList() {
       </div>
     );
   if (!user || !kind || !data) return <ContentListSkeleton />;
-  const { users, counts, rows, library, stats } = data;
+  const { users, counts, rows, stats } = data;
   const meta = KIND_META[kind];
   const Icon = ICONS[kind as keyof typeof ICONS];
 
@@ -563,7 +536,7 @@ function KindList() {
                     author={users.find((u) => u.id === activeVideo.createdBy)?.fullName}
                     onClose={() => setActiveVideo(null)}
                     onNext={() => {
-                      const traxList = library.filter((i) => i.kind === "trax");
+                      const traxList = rows.filter((i) => i.kind === "trax");
                       const idx = traxList.findIndex((i) => i.id === activeVideo.id);
                       if (traxList.length > 0) {
                         const nextIdx = (idx + 1) % traxList.length;
@@ -571,7 +544,7 @@ function KindList() {
                       }
                     }}
                     onPrevious={() => {
-                      const traxList = library.filter((i) => i.kind === "trax");
+                      const traxList = rows.filter((i) => i.kind === "trax");
                       const idx = traxList.findIndex((i) => i.id === activeVideo.id);
                       if (traxList.length > 0) {
                         const prevIdx = (idx - 1 + traxList.length) % traxList.length;

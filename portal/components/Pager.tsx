@@ -92,30 +92,29 @@ export function Pager({
         </PaginationContent>
       </Pagination>
 
-      {/* Only worth showing once the numbered links stop covering the range. */}
-      {count > 5 && (
-        <form onSubmit={submitJump} className="flex items-center gap-2">
-          <label
-            htmlFor={jumpId}
-            className="text-[12px] font-semibold whitespace-nowrap text-muted"
-          >
-            Go to page
-          </label>
-          <input
-            id={jumpId}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={jump}
-            onChange={(e) => setJump(e.target.value.replace(/\D/g, ""))}
-            onBlur={submitJump}
-            placeholder={String(page)}
-            aria-label={`Go to page, 1 to ${count}`}
-            title={`1 to ${count}`}
-            className="h-9 w-16 rounded-xl border border-line text-center text-[13px] font-bold tabular-nums outline-none focus:border-accent"
-          />
-        </form>
-      )}
+      {/* Shown wherever there is a pager at all, so the control is in the same
+          place on every list rather than appearing once a list gets long. */}
+      <form onSubmit={submitJump} className="flex items-center gap-2">
+        <label
+          htmlFor={jumpId}
+          className="text-[12px] font-semibold whitespace-nowrap text-muted"
+        >
+          Go to page
+        </label>
+        <input
+          id={jumpId}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={jump}
+          onChange={(e) => setJump(e.target.value.replace(/\D/g, ""))}
+          onBlur={submitJump}
+          placeholder={String(page)}
+          aria-label={`Go to page, 1 to ${count}`}
+          title={`1 to ${count}`}
+          className="h-9 w-16 rounded-xl border border-line text-center text-[13px] font-bold tabular-nums outline-none focus:border-accent"
+        />
+      </form>
       </div>
 
       <p className="text-[11px] text-faint tabular-nums">

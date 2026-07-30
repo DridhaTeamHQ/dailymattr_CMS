@@ -9,6 +9,8 @@ export const PAGE_SIZES = {
   articleRows: 8,
   /** Review queue rows are tall; fewer per page keeps the actions in reach. */
   reviewRows: 5,
+  /** Analytics is a dense table — a screenful is more than a card grid's. */
+  analyticsRows: 20,
 } as const;
 
 export const pageCount = (total: number, size: number) =>

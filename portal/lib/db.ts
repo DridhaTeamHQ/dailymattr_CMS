@@ -252,6 +252,85 @@ export async function listContent(kind?: ContentKind): Promise<ContentItem[]> {
   return (data ?? []).map(toContent);
 }
 
+/** A live item as a ranking table needs it: enough to label a row, no more. */
+export type PublishedLite = {
+  id: string;
+  kind: ContentKind;
+  title: string;
+  categorySlug: string | null;
+  publishedAt: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Every live CMS item, without the heavy columns.
+ *
+ * `cover_url` is left out deliberately. Fifteen of the rows currently hold
+ * their cover inlined as a base64 data URL rather than a link to storage —
+ * 4 MB between them, one of them 2 MB on its own. Selecting `*` to build a
+ * table of 64-pixel thumbnails downloads every byte of that, and the numbers
+ * the table actually ranks by are a few hundred bytes. So the list comes back
+ * without covers and `listContentCovers` fetches them for the rows on screen.
+ *
+ * Ranged rather than limited, because PostgREST caps a response at its
+ * max-rows setting and would otherwise truncate in silence.
+ */
+export async function listPublishedLite(): Promise<PublishedLite[]> {
+  const rows: Row[] = [];
+  const CHUNK = 1000;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("content_items")
+      .select("id,kind,title,category_slug,published_at,updated_at")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(rows.length, rows.length + CHUNK - 1);
+    fail("listPublishedLite", error);
+
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < CHUNK) break;
+  }
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    kind: r.kind as ContentKind,
+    title: r.title as string,
+    categorySlug: (r.category_slug as string | null) ?? null,
+    publishedAt: (r.published_at as string | null) ?? null,
+    updatedAt: r.updated_at as string,
+  }));
+}
+
+/**
+ * Covers for specific items, so a list can pay for the ones it shows.
+ *
+ * Chunked small on purpose: these are the megabyte-sized values, so a URL
+ * asking for fifty of them is already a big enough response.
+ */
+export async function listContentCovers(
+  ids: string[]
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  if (ids.length === 0) return out;
+  const CHUNK = 50;
+
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from("content_items")
+      .select("id,cover_url")
+      .in("id", ids.slice(i, i + CHUNK));
+    fail("listContentCovers", error);
+    for (const r of (data ?? []) as Row[]) {
+      out.set(r.id as string, (r.cover_url as string | null) ?? null);
+    }
+  }
+
+  return out;
+}
+
 export async function getContentItem(id: string): Promise<ContentItem | null> {
   const { data, error } = await supabase
     .from("content_items")

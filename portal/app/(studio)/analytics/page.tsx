@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -12,10 +12,14 @@ import {
   Share2,
   ThumbsDown,
 } from "lucide-react";
+import { Pager } from "@/components/Pager";
 import { Pill, SectionHeader } from "@/components/ui";
 import { fmt } from "@/components/StatsStrip";
 import { can, useAuth } from "@/lib/auth";
 import { useQuery } from "@/lib/useQuery";
+import { listContentCovers } from "@/lib/db";
+import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
+import { usePageParam } from "@/lib/usePageParam";
 import { timeAgo } from "@/lib/store";
 import {
   KIND_LABEL,
@@ -59,11 +63,31 @@ const COLS: { key: MetricKey; icon: typeof Eye; label: string }[] = [
   { key: "shares", icon: Share2, label: "Shared" },
 ];
 
+/** The pager reads the query string — see the note on ArticlesPage. */
 export default function AnalyticsPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <AnalyticsTable />
+    </Suspense>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="mt-6 space-y-3">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="h-16 animate-pulse rounded-2xl bg-canvas" />
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsTable() {
   const { user } = useAuth();
   const [filter, setFilter] = useState<RowKind | "all">("all");
   const [sort, setSort] = useState<SortKey>("actions");
   const [term, setTerm] = useState("");
+  const [page, setPage] = usePageParam();
 
   const { data, error } = useQuery(() => loadAnalytics());
 
@@ -82,6 +106,31 @@ export default function AnalyticsPage() {
 
   const sums = useMemo(() => totals(rows), [rows]);
 
+  /* Totals above are deliberately computed from every filtered row, not from
+     the page — a figure that counted only what happens to be on screen would
+     be read as a total and be wrong. */
+  const size = PAGE_SIZES.analyticsRows;
+  const current = clampPage(page, rows.length, size);
+  const pageRows = pageSlice(rows, page, size);
+
+  /* Covers for the twenty rows on screen, not for the whole table. Some of
+     them are inlined base64 and run to megabytes each, so fetching the set
+     the table ranks over would dwarf everything else on the page. */
+  const coverIds = pageRows
+    .filter((r) => r.source === "cms")
+    .map((r) => r.id)
+    .join(",");
+  const { data: covers } = useQuery(
+    () => listContentCovers(coverIds ? coverIds.split(",") : []),
+    [coverIds]
+  );
+
+  /** Narrowing the list invalidates the page number, so start over. */
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
+
   if (!user || !can.seeStats(user.role)) {
     return (
       <div className="card mt-6 p-6 text-sm text-muted">
@@ -98,15 +147,7 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="mt-6 space-y-3">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="h-16 animate-pulse rounded-2xl bg-canvas" />
-        ))}
-      </div>
-    );
-  }
+  if (!data) return <TableSkeleton />;
 
   const headline: [string, number][] = [
     ["Opened", sums.views],
@@ -143,7 +184,7 @@ export default function AnalyticsPage() {
         {FILTERS.map((f) => (
           <button
             key={f.key}
-            onClick={() => setFilter(f.key)}
+            onClick={() => reset(setFilter)(f.key)}
             className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors ${
               filter === f.key
                 ? "bg-accent text-white"
@@ -162,14 +203,14 @@ export default function AnalyticsPage() {
             />
             <input
               value={term}
-              onChange={(e) => setTerm(e.target.value)}
+              onChange={(e) => reset(setTerm)(e.target.value)}
               placeholder="Search title or source…"
               className="w-56 rounded-full border border-line bg-transparent py-1.5 pr-3 pl-8 text-xs font-semibold outline-none focus:border-accent"
             />
           </div>
           <select
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
+            onChange={(e) => reset(setSort)(e.target.value as SortKey)}
             className="rounded-full border border-line bg-transparent px-3 py-1.5 text-xs font-bold outline-none focus:border-accent"
           >
             {SORTS.map((s) => (
@@ -196,7 +237,7 @@ export default function AnalyticsPage() {
             {COLS.map((c) => (
               <button
                 key={c.key}
-                onClick={() => setSort(c.key)}
+                onClick={() => reset(setSort)(c.key)}
                 title={`Sort by ${c.label.toLowerCase()}`}
                 className={`w-14 text-center text-[11px] font-bold tracking-wide uppercase transition-colors ${
                   sort === c.key ? "text-accent" : "text-faint hover:text-ink"
@@ -211,12 +252,26 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="divide-y divide-line">
-            {rows.map((r, i) => (
-              <Row key={r.key} row={r} index={i} sort={sort} />
+            {pageRows.map((r, i) => (
+              <Row
+                key={r.key}
+                row={r}
+                index={i}
+                sort={sort}
+                cover={r.coverUrl ?? covers?.get(r.id) ?? null}
+              />
             ))}
           </div>
         </div>
       )}
+
+      <Pager
+        page={current}
+        total={rows.length}
+        size={size}
+        onPage={setPage}
+        label="stories"
+      />
     </>
   );
 }
@@ -225,10 +280,13 @@ function Row({
   row,
   index,
   sort,
+  cover,
 }: {
   row: AnalyticsRow;
   index: number;
   sort: SortKey;
+  /** Resolved by the page: feed rows carry theirs, CMS rows are fetched. */
+  cover: string | null;
 }) {
   return (
     <motion.div
@@ -240,10 +298,10 @@ function Row({
         href={`/analytics/${row.source}/${row.id}`}
         className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-canvas"
       >
-        {row.coverUrl ? (
+        {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={row.coverUrl}
+            src={cover}
             alt=""
             loading="lazy"
             decoding="async"

@@ -1,8 +1,8 @@
 import {
   EMPTY_STATS,
   getNewsStudioByIds,
-  listContent,
   listContentStats,
+  listPublishedLite,
   listSelections,
   statKey,
 } from "@/lib/db";
@@ -61,16 +61,14 @@ const actionsOf = (s: ContentStats) =>
  */
 export async function loadAnalytics(): Promise<AnalyticsRow[]> {
   const [content, selections] = await Promise.all([
-    listContent(),
+    listPublishedLite(),
     listSelections(),
   ]);
 
   /* Both of these need the selection ids, so they wait on that one call and
      then run together — comment counts live in DB A and are asked for by id. */
   const feedIds = selections.map((s) => s.articleId);
-  const liveCmsIds = content
-    .filter((c) => c.status === "published")
-    .map((c) => c.id);
+  const liveCmsIds = content.map((c) => c.id);
   const [feedArticles, stats] = await Promise.all([
     getNewsStudioByIds(feedIds),
     listContentStats(feedIds, liveCmsIds),
@@ -80,7 +78,6 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
   const rows: AnalyticsRow[] = [];
 
   for (const c of content) {
-    if (c.status !== "published") continue;
     const key = statKey("cms", c.id);
     const s = stats.get(key) ?? EMPTY_STATS;
     rows.push({
@@ -89,7 +86,8 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
       id: c.id,
       kind: c.kind,
       title: c.title,
-      coverUrl: c.coverUrl,
+      // Filled in for the visible page only — see listPublishedLite.
+      coverUrl: null,
       meta: c.categorySlug ?? "Uncategorised",
       liveAt: c.publishedAt ?? c.updatedAt,
       stats: s,
