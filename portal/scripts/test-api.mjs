@@ -231,6 +231,18 @@ async function main() {
       "/api/pix/image rejects a missing url before fetching",
       (await get("/api/pix/image", { "X-Forwarded-For": "198.18.0.3" })).status === 400
     );
+
+    // The widest fan-out here: one broadcast walks the whole audience in
+    // hundreds. The database decides who may send and a unique constraint
+    // stops the same story going twice, but neither bounds a run through many
+    // stories, which is what a stolen editor session looks like.
+    await burst("/api/notify", 9, () =>
+      post("/api/notify", {}, { "X-Forwarded-For": "198.18.0.4" })
+    );
+    check(
+      "/api/notify refuses a request with no token",
+      (await post("/api/notify", {}, { "X-Forwarded-For": "198.18.0.5" })).status === 401
+    );
   }
 
   // ── rate limiting cannot be shrugged off with a header ────────────

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { acquireSlot, clientIp, rateLimit, releaseSlot } from "@/lib/rate-limit";
 
 /* Push a featured story to every reader who has the app installed.
  *
@@ -19,6 +20,12 @@ import { createClient } from "@supabase/supabase-js";
 const EXPO_PUSH = "https://exp.host/--/api/v2/push/send";
 /** Expo's documented maximum messages per request. */
 const CHUNK = 100;
+
+const RULES = (ip: string) => [
+  { key: `notify:ip:${ip}:min`, limit: 6, windowMs: 60_000 },
+  { key: `notify:ip:${ip}:hr`, limit: 30, windowMs: 3_600_000 },
+  { key: "notify:global:hr", limit: 60, windowMs: 3_600_000 },
+];
 
 type Body = {
   source?: "cms" | "pipeline";
@@ -51,6 +58,43 @@ function usableImage(url: string | undefined): string | undefined {
 }
 
 export async function POST(req: Request) {
+  const ip = clientIp(req);
+  const slotKey = `notify:${ip}`;
+
+  // The largest fan-out in the app: one call walks the whole audience in
+  // hundreds, so a thousand installs is ten outbound requests to Expo and it
+  // grows with every reader. The database decides *who* may broadcast, and the
+  // unique (source, content_id) means the same story cannot go twice — but
+  // neither of those bounds a run through many stories in a row, which is what
+  // a stolen editor session would look like.
+  //
+  // Sized for how this is actually used. A desk pushes a handful of stories a
+  // day; nobody legitimately sends six in a minute.
+  const limited = rateLimit(RULES(ip));
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many broadcasts. Try again in ${limited.retryAfter}s.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } }
+    );
+  }
+  // A send runs for as long as the audience takes; two at once from one editor
+  // is a double-tapped button, not an intention.
+  if (!acquireSlot(slotKey)) {
+    return NextResponse.json(
+      { error: "A broadcast is already going out. Wait for it to finish." },
+      { status: 429 }
+    );
+  }
+
+  try {
+    return await broadcast(req);
+  } finally {
+    // Always — a failed send must not lock the desk out until a restart.
+    releaseSlot(slotKey);
+  }
+}
+
+async function broadcast(req: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
