@@ -181,6 +181,7 @@ function ArticlesTabs() {
      courtesy rather than the guard. */
   const notify = async (art: NewsStudioArticle) => {
     const audience = data?.audience ?? 0;
+    const sel = data?.selections.find((x) => x.articleId === art.id);
     if (!data || data.notified.has(statKey("pipeline", art.id)) || audience === 0) return;
     if (
       !window.confirm(
@@ -196,8 +197,9 @@ This cannot be undone or recalled.`,
         const r = await notifyReaders({
           source: "pipeline",
           contentId: art.id,
-          title: art.title,
-          body: art.summary,
+          title: sel?.titleOverride?.trim() || art.title,
+          body: sel?.summaryOverride?.trim() || art.summary,
+          image: sel?.imageOverride?.trim() || art.imageUrl,
         });
         if (r.failed > 0) {
           throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);

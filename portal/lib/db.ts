@@ -972,6 +972,8 @@ export async function notifyReaders(input: {
   contentId: string;
   title: string;
   body?: string;
+  /** Cover image; Android shows it in the expanded notification. */
+  image?: string;
 }): Promise<{ sent: number; attempted: number; failed: number }> {
   const { data: session } = await supabase.auth.getSession();
   const token = session.session?.access_token;

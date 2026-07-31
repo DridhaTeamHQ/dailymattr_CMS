@@ -25,7 +25,39 @@ type Body = {
   contentId?: string;
   title?: string;
   body?: string;
+  /** Cover image. Android renders it in the expanded notification. */
+  image?: string;
 };
+
+/* A notification is a headline, not the story.
+ *
+ * The body used to be the whole summary, which on a phone is a wall of text
+ * that has already told the reader everything — leaving no reason to open the
+ * app, which is the one thing a push is for. Cut at a sentence boundary so it
+ * ends like a sentence rather than mid-word. */
+const TEASER_MAX = 160;
+
+function teaser(text: string): string | undefined {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return undefined;
+  if (clean.length <= TEASER_MAX) return clean;
+  const cut = clean.slice(0, TEASER_MAX);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+  // Only honour a sentence break in the back half; an early one would throw
+  // away most of the teaser to gain a full stop.
+  if (stop > TEASER_MAX * 0.5) return cut.slice(0, stop + 1);
+  return cut.slice(0, cut.lastIndexOf(" ")).trimEnd() + "…";
+}
+
+/** Only an absolute http(s) URL can be fetched by a phone. */
+function usableImage(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const t = url.trim();
+  if (!/^https?:\/\//i.test(t)) return undefined;
+  // A data: URI would be megabytes of base64 in every message; Expo's payload
+  // limit would reject the batch and take the whole send with it.
+  return t;
+}
 
 export async function POST(req: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,7 +78,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
 
-  const { source, contentId, title, body } = payload;
+  const { source, contentId, title, body, image } = payload;
   if (
     (source !== "cms" && source !== "pipeline") ||
     !contentId ||
@@ -109,15 +141,24 @@ export async function POST(req: Request) {
     );
   }
 
+  const cover = usableImage(image);
+
   const messages = tokens.map((to) => ({
     to,
     sound: "default",
     title: title.trim(),
-    body: (body ?? "").trim() || undefined,
+    body: teaser(body ?? ""),
     // What the app reads on tap to open the right story — see
     // addNotificationTapListener in the app's lib/notifications.
     data: { articleId: source === "cms" ? `cms:${contentId}` : contentId },
     channelId: "breaking",
+    // Delivered now rather than batched with the system's next wake-up. A
+    // story the desk chose to interrupt someone for is not a background sync.
+    priority: "high" as const,
+    ...(cover ? { richContent: { image: cover } } : {}),
+    /* One story, one notification. If the same story is ever sent again the
+       phone replaces the old one rather than stacking a duplicate. */
+    collapseId: `${source}:${contentId}`,
   }));
 
   let delivered = 0;

@@ -209,6 +209,7 @@ This cannot be undone or recalled.`,
           contentId: c.id,
           title: c.title,
           body: c.summary,
+          image: c.coverUrl ?? undefined,
         });
         if (r.failed > 0) {
           throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);
