@@ -30,6 +30,7 @@ Run in this order against a fresh project (they are already applied to
 | 11 | `11_engagement_pipeline` | Lets engagement cover NewsStudio articles as well as CMS content: drops the `content_items` foreign key, adds a `source` column, and re-keys the view and RPCs on `(source, content_id)`. The published-only guard survives as `private.engageable` — CMS ids must be published, pipeline ids must appear in `article_selections`. |
 | 12 | `12_engagement_comments` | Adds a `comment` event kind so the desk sees comments written rather than only the panel being opened, plus `source_opens`. The view is replaced rather than dropped, so its grant survives. |
 | 13 | `13_content_comments` | Comment threads for CMS content: `content_comments`, `content_comment_likes`, and RPCs mirroring DB A's so the app maps both with one set of types. Until this, commenting on a Pix, Qix, Trax or desk-written article silently discarded the comment. |
+| 15 | `15_push` | `push_tokens`, `content_notifications`, and the RPCs behind the Notify readers action. Tokens are readable by nobody — the desk reaches them only through `app_push_audience`, which is limited to `super_admin` / `chief_editor`. A unique (source, content_id) makes a second broadcast of the same story impossible. |
 
 ### Two linter warnings that are the design
 

@@ -920,6 +920,79 @@ export async function listCommentCounts(
   return out;
 }
 
+// ── push notifications ──────────────────────────────────────────────
+
+/** How many phones a broadcast would reach right now. 0 when not allowed. */
+export async function pushAudienceSize(): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc("app_push_audience_size");
+    if (error) {
+      // Absent until migration 15 is applied; the page still renders.
+      if (!/does not exist/i.test(error.message)) console.warn("[push]", error.message);
+      return 0;
+    }
+    return Number(data ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** Stories readers have already been told about, keyed by `statKey`. */
+export async function listNotified(): Promise<Set<string>> {
+  const out = new Set<string>();
+  try {
+    const { data, error } = await supabase
+      .from("content_notifications")
+      .select("source,content_id");
+    if (error) {
+      if (!/does not exist|permission denied/i.test(error.message)) {
+        console.warn("[push]", error.message);
+      }
+      return out;
+    }
+    for (const r of (data ?? []) as { source: StatsSource; content_id: string }[]) {
+      out.add(statKey(r.source, r.content_id));
+    }
+  } catch {
+    /* the page is still useful without it */
+  }
+  return out;
+}
+
+/**
+ * Send a push to every reader, about one story.
+ *
+ * Goes through the API route rather than straight to Expo: the token list must
+ * not reach a browser. The route re-checks permission in the database using the
+ * session forwarded here, so this cannot be talked into sending by anyone the
+ * database would refuse.
+ */
+export async function notifyReaders(input: {
+  source: StatsSource;
+  contentId: string;
+  title: string;
+  body?: string;
+}): Promise<{ sent: number; attempted: number; failed: number }> {
+  const { data: session } = await supabase.auth.getSession();
+  const token = session.session?.access_token;
+  if (!token) throw new Error("Your session expired — sign in again.");
+
+  const res = await fetch("/api/notify", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const json = await res.json().catch(() => ({}) as Record<string, unknown>);
+  if (!res.ok) {
+    throw new Error((json as { error?: string }).error ?? "Couldn't notify readers.");
+  }
+  return json as { sent: number; attempted: number; failed: number };
+}
+
 // ── audit ───────────────────────────────────────────────────────────
 export async function listAudit(limit = 200): Promise<AuditEntry[]> {
   const { data, error } = await supabase

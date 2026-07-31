@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AudioLines, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
+import { AudioLines, BellRing, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
@@ -20,6 +20,9 @@ import {
   countContentByKind,
   deleteContent,
   listContentStats,
+  listNotified,
+  notifyReaders,
+  pushAudienceSize,
   setContentFeatured,
   statKey,
   listContentPage,
@@ -137,7 +140,11 @@ function KindList() {
           )
         : new Map<string, ContentStats>();
 
-    return { users, stats, ...base };
+    /* Both are cheap and both are needed to render the notify button
+       honestly: how many phones exist, and which stories already went out. */
+    const [notified, audience] = await Promise.all([listNotified(), pushAudienceSize()]);
+
+    return { users, stats, notified, audience, ...base };
   }, [kind, page, size, tab]);
 
   const lastPage = data ? pageCount(data.total, size) : 1;
@@ -154,7 +161,7 @@ function KindList() {
       </div>
     );
   if (!user || !kind || !data) return <ContentListSkeleton />;
-  const { users, counts, rows, stats } = data;
+  const { users, counts, rows, stats, notified, audience } = data;
   const meta = KIND_META[kind];
   const Icon = ICONS[kind as keyof typeof ICONS];
 
@@ -173,6 +180,42 @@ function KindList() {
       success: next ? "Featured in the app" : "No longer featured",
       error: "Couldn't change that",
     });
+    refetch();
+  };
+
+  /* An explicit action, not a side effect of featuring.
+
+     A push reaches every install at once and cannot be recalled, so it stays a
+     decision someone makes while looking at the recipient count — not
+     something that fires because a star got clicked. The database refuses a
+     second send for the same story, so the disabled state here is a courtesy
+     rather than the actual guard. */
+  const notify = async (c: ContentItem) => {
+    const already = notified.has(statKey("cms", c.id));
+    if (already || audience === 0) return;
+    if (
+      !window.confirm(
+        `Notify ${audience} ${audience === 1 ? "reader" : "readers"} about "${c.title}"?
+
+This cannot be undone or recalled.`,
+      )
+    )
+      return;
+
+    await toast.run(
+      async () => {
+        const r = await notifyReaders({
+          source: "cms",
+          contentId: c.id,
+          title: c.title,
+          body: c.summary,
+        });
+        if (r.failed > 0) {
+          throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);
+        }
+      },
+      { success: "Readers notified", error: "Couldn't notify readers" },
+    );
     refetch();
   };
 
@@ -474,6 +517,22 @@ function KindList() {
                     }`}
                   >
                     {c.isFeatured ? <Sparkles size={14} /> : <Star size={14} />}
+                  </button>
+                )}
+                {publisher && c.status === "published" && c.isFeatured && (
+                  <button
+                    onClick={() => notify(c)}
+                    disabled={notified.has(statKey("cms", c.id)) || audience === 0}
+                    title={
+                      notified.has(statKey("cms", c.id))
+                        ? "Readers have already been notified"
+                        : audience === 0
+                          ? "No reader has push enabled yet"
+                          : `Notify ${audience} ${audience === 1 ? "reader" : "readers"}`
+                    }
+                    className="absolute top-3 right-13 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-shell/70 text-white/70 backdrop-blur transition-colors hover:text-white disabled:cursor-not-allowed disabled:text-white/25"
+                  >
+                    <BellRing size={14} />
                   </button>
                 )}
                 <Link
