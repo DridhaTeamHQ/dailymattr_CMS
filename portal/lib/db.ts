@@ -412,13 +412,31 @@ export async function listContentPage(
     page = 1,
     size = 10,
     bucket = "all",
-  }: { page?: number; size?: number; bucket?: ContentBucket } = {}
+    search = "",
+  }: {
+    page?: number;
+    size?: number;
+    bucket?: ContentBucket;
+    search?: string;
+  } = {}
 ): Promise<ContentPage> {
   let q = supabase
     .from("content_items")
     .select("*", { count: "exact" })
     .eq("kind", kind);
   if (bucket !== "all") q = q.eq("status", bucket);
+
+  /* Searched in the database, like the NewsStudio grid, because the browser
+     only ever holds one page — filtering here would search the page rather
+     than the library, which is the opposite of what a search is for.
+
+     Title and summary only: `tags` is an array column and ilike cannot reach
+     into it, so a tag search would need a different operator and silently
+     match nothing in the meantime. */
+  const term = searchTerm(search);
+  if (term) {
+    q = q.or(["title", "summary"].map((c) => `${c}.ilike.*${term}*`).join(","));
+  }
 
   const from = (Math.max(1, page) - 1) * size;
   const { data, error, count } = await q
@@ -428,6 +446,50 @@ export async function listContentPage(
   fail("listContentPage", error);
 
   return { rows: (data ?? []).map(toContent), total: count ?? 0 };
+}
+
+/** One row of the Topbar's jump-to list. */
+export type QuickHit = {
+  id: string;
+  kind: ContentKind;
+  title: string;
+  status: ContentStatus;
+};
+
+/**
+ * Everything the Studio holds, by name, for the search box in the Topbar.
+ *
+ * Across kinds on purpose — the point is to reach a story without first
+ * remembering whether it was filed as a Pix or a Qix, which is exactly the
+ * thing a section-by-section search cannot do for you.
+ *
+ * Two characters minimum: a single letter matches most of the library and
+ * makes the request for nothing.
+ */
+export async function quickSearch(search: string, limit = 8): Promise<QuickHit[]> {
+  const term = searchTerm(search);
+  if (term.length < 2) return [];
+
+  const { data, error } = await supabase
+    .from("content_items")
+    .select("id,kind,title,status")
+    .or(["title", "summary"].map((c) => `${c}.ilike.*${term}*`).join(","))
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  fail("quickSearch", error);
+
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    kind: r.kind as ContentKind,
+    title: r.title as string,
+    status: r.status as ContentStatus,
+  }));
+}
+
+/** Where a hit lives — articles are the one kind whose route is pluralised. */
+export function editorHref(kind: ContentKind, id: string): string {
+  const seg = kind === "article" ? "articles" : kind;
+  return `/content/${seg}/editor?id=${id}`;
 }
 
 /**

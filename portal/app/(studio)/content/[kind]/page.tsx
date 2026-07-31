@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AudioLines, BellRing, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
+import { AudioLines, BellRing, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Search, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
@@ -92,6 +92,15 @@ function KindList() {
   const [tab, setTab] = useState<PixTab>("all");
   const [page, setPage] = usePageParam();
   const [activeVideo, setActiveVideo] = useState<ContentItem | null>(null);
+  const [query, setQuery] = useState("");
+
+  // Settled before it reaches the database — searching happens there, and a
+  // request per keystroke would be a request per keystroke.
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   useEffect(() => {
     if (!kind) router.replace("/dashboard");
@@ -122,7 +131,10 @@ function KindList() {
     const bucket: ContentBucket =
       tab === "queue" ? "in_review" : tab === "feed" ? "published" : "all";
     const [slice, counts] = await Promise.all([
-      listContentPage(kind, { page, size, bucket }),
+      listContentPage(kind, { page, size, bucket, search: term }),
+      /* Deliberately unsearched: the tabs count the library, not the result.
+         A search that rewrote the tab numbers would leave the desk with no
+         way to see how much is actually in there. */
       countContentByKind(kind),
     ]);
     const base = { rows: slice.rows, total: slice.total, counts };
@@ -145,7 +157,20 @@ function KindList() {
     const [notified, audience] = await Promise.all([listNotified(), pushAudienceSize()]);
 
     return { users, stats, notified, audience, ...base };
-  }, [kind, page, size, tab]);
+  }, [kind, page, size, tab, term]);
+
+  /* A new search starts at the top: page 3 of the old results is not page 3 of
+     the new ones, and lands on an empty grid more often than not. Skipped on
+     the first run so that a shared ?page=3 link still opens on page 3 — the
+     tab buttons already reset the page themselves. */
+  const searched = useRef(false);
+  useEffect(() => {
+    if (!searched.current) {
+      searched.current = true;
+      return;
+    }
+    setPage(1);
+  }, [term, setPage]);
 
   const lastPage = data ? pageCount(data.total, size) : 1;
   // Approving the last item on a page — or a hand-typed ?page=99 — leaves the
@@ -330,6 +355,41 @@ This cannot be undone or recalled.`,
           <span className="flex flex-1 items-center justify-center gap-1 rounded-full bg-canvas py-1.5 text-[11px] font-bold text-faint">
             Live in app
           </span>
+          {/* Featuring and notifying, on the card that actually renders.
+              They existed only on the plain list card, which Pix, Qix and Trax
+              never use — so a picture or a video could not be led with or sent
+              to anyone, however featured the desk believed it was. */}
+          {publisher && (
+            <button
+              onClick={() => feature(c)}
+              aria-label={
+                c.isFeatured ? `Unfeature ${c.title}` : `Feature ${c.title} in the app`
+              }
+              title={c.isFeatured ? "Remove from featured" : "Feature in the app"}
+              className={`btn-ghost flex h-[26px] w-[26px] shrink-0 items-center justify-center !p-0 ${
+                c.isFeatured ? "!border-accent/40 !bg-tint !text-accent" : ""
+              }`}
+            >
+              {c.isFeatured ? <Sparkles size={11} /> : <Star size={11} />}
+            </button>
+          )}
+          {publisher && c.isFeatured && (
+            <button
+              onClick={() => notify(c)}
+              disabled={notified.has(statKey("cms", c.id)) || audience === 0}
+              aria-label={`Notify readers about ${c.title}`}
+              title={
+                notified.has(statKey("cms", c.id))
+                  ? "Readers have already been notified"
+                  : audience === 0
+                    ? "No reader has push enabled yet"
+                    : `Notify ${audience} ${audience === 1 ? "reader" : "readers"}`
+              }
+              className="btn-ghost flex h-[26px] w-[26px] shrink-0 items-center justify-center !p-0 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <BellRing size={11} />
+            </button>
+          )}
           {/* Pulling a live Pix out of the app feed — QA only. */}
           <button
             onClick={() => setDeleteId(c.id)}
@@ -376,7 +436,8 @@ This cannot be undone or recalled.`,
       </SectionHeader>
 
       {cardGrid && counts.all > 0 && (
-        <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
           {GRID_TABS.map(([t, label, count]) => (
             <button
               key={t}
@@ -404,6 +465,32 @@ This cannot be undone or recalled.`,
               </span>
             </button>
           ))}
+          </div>
+
+          {/* Searches the library, not the page — see listContentPage. */}
+          <div className="relative w-full max-w-xs">
+            <Search
+              size={15}
+              className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Search ${meta.label.toLowerCase()}…`}
+              aria-label={`Search ${meta.label.toLowerCase()}`}
+              className="field !rounded-full !bg-card py-2.5 pr-10 pl-10 shadow-(--shadow-soft)"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                title="Clear search"
+                className="absolute top-1/2 right-4 -translate-y-1/2 text-faint transition-colors hover:text-ink"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -425,10 +512,16 @@ This cannot be undone or recalled.`,
               <Check size={20} />
             </span>
             <p className="font-bold">
-              {tab === "queue" ? "Queue is clear" : "Nothing live yet"}
+              {term
+                ? `Nothing matches “${term}”`
+                : tab === "queue"
+                  ? "Queue is clear"
+                  : "Nothing live yet"}
             </p>
             <p className="max-w-xs text-sm text-muted">
-              {tab === "queue"
+              {term
+                ? "Titles and summaries are searched — try fewer words."
+                : tab === "queue"
                 ? `${meta.label} submitted by writers land here for review.`
                 : `Approved ${meta.label} appear here once the chief editor publishes them.`}
             </p>

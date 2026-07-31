@@ -305,15 +305,35 @@ This cannot be undone or recalled.`,
   const written = data.written;
   const showStats = can.seeStats(user.role);
 
+  const articleOf = (id: string) =>
+    data.feedArticles.find((n) => n.id === id) ?? null;
+
+  const hit = (...fields: (string | null | undefined)[]) => {
+    if (!term) return true;
+    const needle = term.toLowerCase();
+    return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
+  };
+
+  /* Newest first.
+     `position` still counts up from the first story ever approved — that is
+     what it means and the number is on the card — but a desk opening this tab
+     wants what it just approved, not what it approved in April. The grid and
+     the drafts already read newest-first; only this list did not. */
+  const feedOrdered = [...selections].reverse().filter((sel) => {
+    const art = articleOf(sel.articleId);
+    return hit(sel.titleOverride, art?.title, art?.category, art?.source);
+  });
+  const writtenFiltered = written.filter((c) => hit(c.title, c.summary));
+
   // The grid arrives already paged and searched; the feed and the drafts are
   // small enough to page in the browser. Approving can empty the last page of
   // those two, so clamp before slicing.
   const newsRows = news.rows;
   const newsPage = clampPage(page, news.total, newsSize);
-  const feedPage = clampPage(page, selections.length, rowSize);
-  const writtenPage = clampPage(page, written.length, rowSize);
-  const feedRows = pageSlice(selections, page, rowSize);
-  const writtenRows = pageSlice(written, page, rowSize);
+  const feedPage = clampPage(page, feedOrdered.length, rowSize);
+  const writtenPage = clampPage(page, writtenFiltered.length, rowSize);
+  const feedRows = pageSlice(feedOrdered, page, rowSize);
+  const writtenRows = pageSlice(writtenFiltered, page, rowSize);
 
   const selOf = (id: string) => selections.find((s) => s.articleId === id);
   const nameOf = (id: string) =>
@@ -345,8 +365,14 @@ This cannot be undone or recalled.`,
         </Link>
       </SectionHeader>
 
-      {/* tabs */}
-      <div className="mb-5 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
+      {/* Tabs and one search box between them.
+          The box used to live inside the NewsStudio tab, so the two lists a
+          desk actually works in every day — the feed and its own drafts — had
+          no way to find anything. It searches whichever tab is open, and the
+          term survives switching tabs, which is how you chase one story from
+          the wire into the feed. */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-card p-1 shadow-(--shadow-soft)">
         {TABS.map(([t, label, count]) => (
           <button
             key={t}
@@ -378,36 +404,46 @@ This cannot be undone or recalled.`,
         ))}
       </div>
 
+        <div className="relative w-full max-w-xs">
+          <Search
+            size={15}
+            className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint"
+          />
+          <input
+            className="field !rounded-full !bg-card pr-10 pl-10 shadow-(--shadow-soft)"
+            placeholder={
+              tab === "newsstudio"
+                ? "Search title, category or source…"
+                : tab === "feed"
+                  ? "Search the live feed…"
+                  : "Search your articles…"
+            }
+            aria-label="Search articles"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+          />
+          {query && (
+            <button
+              onClick={() => {
+                setQuery("");
+                setPage(1);
+              }}
+              aria-label="Clear search"
+              title="Clear search"
+              className="absolute top-1/2 right-4 -translate-y-1/2 text-faint hover:text-ink"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* ── NewsStudio ─────────────────────────────────────────── */}
       {tab === "newsstudio" && (
         <>
-          <div className="relative mb-4 max-w-sm">
-            <Search
-              size={15}
-              className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint"
-            />
-            <input
-              className="field !rounded-full !bg-card pl-10 shadow-(--shadow-soft)"
-              placeholder="Search title, category or source…"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(1);
-              }}
-            />
-            {query && (
-              <button
-                onClick={() => {
-                  setQuery("");
-                  setPage(1);
-                }}
-                className="absolute top-1/2 right-3.5 -translate-y-1/2 text-faint hover:text-ink"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
           {newsRows.length === 0 ? (
             <div className="card flex flex-col items-center gap-2 p-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
@@ -586,27 +622,35 @@ This cannot be undone or recalled.`,
               </span>
               <div>
                 <h3 className="text-sm font-bold">Live in DailyMattr</h3>
+                {/* The old line said the first story approved leads the feed.
+                    That stopped being true when the app started ranking: it
+                    pins featured, then scores the rest on freshness and what
+                    the reader actually reads. */}
                 <p className="text-[11px] text-muted">
-                  Order follows approval — the first story approved leads the
-                  feed.
+                  Newest first here. The app leads with featured, then ranks on
+                  freshness and the reader.
                 </p>
               </div>
             </div>
             <Pill tone="mint">{selections.length} approved</Pill>
           </div>
 
-          {selections.length === 0 ? (
+          {feedOrdered.length === 0 ? (
             <div className="card flex flex-col items-center gap-2 p-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
                 <Check size={20} />
               </span>
-              <p className="font-bold">Nothing approved yet</p>
-              <p className="max-w-xs text-sm text-muted">
-                {approver
-                  ? "Approve stories from the NewsStudio tab — they queue up here in the order you approve them."
-                  : "QA approves stories into the feed."}
+              <p className="font-bold">
+                {term ? `Nothing in the feed matches “${term}”` : "Nothing approved yet"}
               </p>
-              {approver && (
+              <p className="max-w-xs text-sm text-muted">
+                {term
+                  ? "Headlines, categories and sources are searched."
+                  : approver
+                    ? "Approve stories from the NewsStudio tab — they queue up here in the order you approve them."
+                    : "QA approves stories into the feed."}
+              </p>
+              {approver && !term && (
                 <button
                   onClick={() => setTab("newsstudio")}
                   className="btn-primary mt-3 px-5 py-2.5 text-xs"
@@ -729,7 +773,7 @@ This cannot be undone or recalled.`,
 
           <Pager
             page={feedPage}
-            total={selections.length}
+            total={feedOrdered.length}
             size={rowSize}
             onPage={setPage}
             label="in the feed"
@@ -741,22 +785,27 @@ This cannot be undone or recalled.`,
       {tab === "cms" && (
         <>
           <div className="space-y-3">
-            {written.length === 0 ? (
+            {writtenFiltered.length === 0 ? (
               <div className="card flex flex-col items-center gap-2 p-14 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
                   <Plus size={20} />
                 </span>
-                <p className="font-bold">No articles written yet</p>
-                <p className="max-w-xs text-sm text-muted">
-                  Write an original 60-word story — it flows through QA before
-                  it reaches the app.
+                <p className="font-bold">
+                  {term ? `Nothing matches “${term}”` : "No articles written yet"}
                 </p>
-                <Link
-                  href="/content/articles/editor"
-                  className="btn-primary mt-3 px-5 py-2.5 text-xs"
-                >
-                  Write the first one
-                </Link>
+                <p className="max-w-xs text-sm text-muted">
+                  {term
+                    ? "Headlines and summaries are searched."
+                    : "Write an original 60-word story — it flows through QA before it reaches the app."}
+                </p>
+                {!term && (
+                  <Link
+                    href="/content/articles/editor"
+                    className="btn-primary mt-3 px-5 py-2.5 text-xs"
+                  >
+                    Write the first one
+                  </Link>
+                )}
               </div>
             ) : (
               writtenRows.map((c, i) => (
@@ -809,7 +858,7 @@ This cannot be undone or recalled.`,
 
           <Pager
             page={writtenPage}
-            total={written.length}
+            total={writtenFiltered.length}
             size={rowSize}
             onPage={setPage}
             label="articles"
