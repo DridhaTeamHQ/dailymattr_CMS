@@ -39,6 +39,11 @@ import {
   updateSelection,
 } from "@/lib/db";
 import { StatsStrip } from "@/components/StatsStrip";
+import {
+  modesAreEmpty,
+  tidyModes,
+  type ReadingModes,
+} from "@/components/ReadingModesPanel";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { ArticlesSkeleton } from "@/components/PageSkeleton";
@@ -156,6 +161,45 @@ function ArticlesTabs() {
       error: "Couldn't add that to the feed",
     });
     refresh();
+    // Not awaited: the desk should not wait on a model to see the story land.
+    void fillModes(art);
+  };
+
+  /* Fill in the retellings a story arrived without.
+   *
+   * The summariser reaches a fraction of the wire, so most stories land with
+   * a summary and nothing else — and asking an editor to press Generate on
+   * every one of them is asking them to do the machine's job. Approval is the
+   * moment it matters: the story is going into the feed, so this is when it
+   * either has retellings or gets them.
+   *
+   * Deliberately after the approval, never before it, and never blocking it.
+   * A story the desk approved must appear in the feed whether or not a model
+   * answered — the modes are an enhancement, not a precondition. Failures are
+   * silent for the same reason; the panel is still there to press by hand.
+   *
+   * Skipped when the story already has them, from either source, so approving
+   * something twice costs nothing. */
+  const fillModes = async (art: NewsStudioArticle) => {
+    if (art.hasModes) return;
+    const existing = data?.selections.find((x) => x.articleId === art.id);
+    if (existing?.modesOverride) return;
+
+    try {
+      const res = await fetch("/api/modes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: art.title, summary: art.summary }),
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as { modes?: ReadingModes };
+      if (!json.modes || modesAreEmpty(json.modes)) return;
+      await updateSelection(art.id, { modesOverride: tidyModes(json.modes) });
+      toast.success(`Reading modes written for "${art.title.slice(0, 40)}"`);
+      refetch();
+    } catch {
+      /* the editor can still write them by hand in the preview */
+    }
   };
 
   const unapprove = async (art: NewsStudioArticle) => {

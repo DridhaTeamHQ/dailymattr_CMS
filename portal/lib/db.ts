@@ -1065,6 +1065,21 @@ const toNewsStudio = (r: Row): NewsStudioArticle => {
     sourceCount: Array.isArray((r.fact_notes as { sources?: unknown[] })?.sources)
       ? ((r.fact_notes as { sources: unknown[] }).sources.length as number)
       : 1,
+    /* Whether the pipeline summariser already wrote retellings for this
+       story. It reaches only a fraction of the feed, so most are false — and
+       false is what makes approval generate them. Mirrors mapModes in the
+       app's lib/content: an empty array is not a mode. */
+    hasModes: (() => {
+      const v = r.versions as
+        | { eli5?: unknown; tldr?: unknown; key_numbers?: unknown }
+        | null;
+      if (!v) return false;
+      return (
+        (typeof v.eli5 === "string" && v.eli5.trim().length > 0) ||
+        (Array.isArray(v.tldr) && v.tldr.length > 0) ||
+        (Array.isArray(v.key_numbers) && v.key_numbers.length > 0)
+      );
+    })(),
     status: (r.status as "approved" | "sent") ?? "approved",
     publishedAt:
       (r.sent_at as string) ||
@@ -1074,7 +1089,7 @@ const toNewsStudio = (r: Row): NewsStudioArticle => {
 };
 
 const NEWS_COLUMNS =
-  "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at";
+  "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at,versions";
 
 /** One page of pipeline articles, plus how many matched in total. */
 export type NewsStudioPage = { rows: NewsStudioArticle[]; total: number };
@@ -1172,7 +1187,7 @@ export async function getNewsStudioByIds(
   const { data, error } = await newsstudio
     .from("articles")
     .select(
-      "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at"
+      "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at,versions"
     )
     .in("id", valid);
   fail("getNewsStudioByIds", error);

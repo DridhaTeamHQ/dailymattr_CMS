@@ -100,6 +100,8 @@ export interface NewsStudioArticle {
   sourceCount: number;
   status: "approved" | "sent";
   publishedAt: string;
+  /** True when the pipeline summariser already wrote reading modes for it. */
+  hasModes: boolean;
 }
 
 /**
