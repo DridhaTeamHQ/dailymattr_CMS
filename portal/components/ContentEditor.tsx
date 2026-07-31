@@ -58,6 +58,7 @@ const emptyItem = (kind: ContentKind, userId: string): ContentItem => ({
   sourceLinks: [],
   factScore: 95,
   factLabel: null,
+  isFeatured: false,
   source: "cms",
   sourceArticleId: null,
   status: "draft",

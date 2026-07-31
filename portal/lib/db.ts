@@ -68,6 +68,7 @@ const toContent = (r: Row): ContentItem => ({
   sourceLinks: (r.source_links as { title: string; url: string }[]) ?? [],
   factScore: (r.fact_score as number | null) ?? null,
   factLabel: (r.fact_label as string | null) ?? null,
+  isFeatured: !!r.is_featured,
   source: (r.source as "cms" | "newsstudio") ?? "cms",
   sourceArticleId: (r.source_article_id as string | null) ?? null,
   status: r.status as ContentStatus,
@@ -103,6 +104,7 @@ const fromContent = (c: Partial<ContentItem>): Row => {
   put("source_links", c.sourceLinks);
   put("fact_score", c.factScore);
   put("fact_label", c.factLabel);
+  put("is_featured", c.isFeatured);
   put("source", c.source);
   put("source_article_id", c.sourceArticleId);
   put("status", c.status);
@@ -508,6 +510,27 @@ export async function hostLocalMedia(item: ContentItem): Promise<string> {
     ...(coverIsLocal ? { coverUrl: null } : {}),
   });
   return url;
+}
+
+/**
+ * Feature a CMS-authored story, or stop featuring it.
+ *
+ * The app shows featured stories with a badge and leads with them, across both
+ * halves of the feed. Only published items should carry it — featuring a draft
+ * promises a lead nobody can read — so the caller gates on status and this
+ * refuses anything else rather than trusting it to.
+ */
+export async function setContentFeatured(id: string, featured: boolean) {
+  const { data, error } = await supabase
+    .from("content_items")
+    .update({ is_featured: featured })
+    .eq("id", id)
+    .eq("status", "published")
+    .select("id");
+  fail("setContentFeatured", error);
+  if (!data?.length) {
+    throw new Error("Only a published story can be featured.");
+  }
 }
 
 export async function setContentStatus(

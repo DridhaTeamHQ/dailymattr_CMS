@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AudioLines, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Trash2, Undo2, X } from "lucide-react";
+import { AudioLines, Calendar, Check, Clapperboard, Clock3, Edit3, Eye, Image as ImageIcon, Rocket, Sparkles, Star, Trash2, Undo2, X } from "lucide-react";
 import { Pager } from "@/components/Pager";
 import { PixCard, PixPreviewModal } from "@/components/PixCard";
 import { QixCard } from "@/components/QixCard";
@@ -20,6 +20,7 @@ import {
   countContentByKind,
   deleteContent,
   listContentStats,
+  setContentFeatured,
   statKey,
   listContentPage,
   listUsers,
@@ -162,6 +163,18 @@ function KindList() {
   const reviewer = can.review(user.role);
   const showStats = can.seeStats(user.role);
   const publisher = can.publish(user.role);
+
+  /* Featuring is a publish-time decision, so it lives on the card rather than
+     in the editor: the desk decides what leads while looking at what else is
+     live, not while writing. */
+  const feature = async (c: ContentItem) => {
+    const next = !c.isFeatured;
+    await toast.run(() => setContentFeatured(c.id, next), {
+      success: next ? "Featured in the app" : "No longer featured",
+      error: "Couldn't change that",
+    });
+    refetch();
+  };
 
   const act = async (id: string, status: ContentStatus, n?: string) => {
     const item = rows.find((c) => c.id === id);
@@ -446,7 +459,23 @@ function KindList() {
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.05, 0.3), duration: 0.4 }}
+                className="relative"
               >
+                {/* Outside the Link on purpose — the whole card is one, and a
+                    button nested in an anchor is both invalid and unclickable. */}
+                {publisher && c.status === "published" && (
+                  <button
+                    onClick={() => feature(c)}
+                    title={c.isFeatured ? "Remove from featured" : "Feature in the app"}
+                    className={`absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full backdrop-blur transition-colors ${
+                      c.isFeatured
+                        ? "bg-accent text-white"
+                        : "bg-shell/70 text-white/70 hover:text-white"
+                    }`}
+                  >
+                    {c.isFeatured ? <Sparkles size={14} /> : <Star size={14} />}
+                  </button>
+                )}
                 <Link
                   href={`/content/${kind}/editor?id=${c.id}`}
                   className="card card-hover block overflow-hidden"

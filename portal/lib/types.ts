@@ -71,6 +71,9 @@ export interface ContentItem {
   sourceLinks: { title: string; url: string }[];
   factScore: number | null;
   factLabel: string | null;
+  /** Editorial lead flag for CMS-authored content — the app shows a badge and
+   *  leads with it. The pipeline equivalent is article_selections.isFeatured. */
+  isFeatured: boolean;
   source: "cms" | "newsstudio";
   sourceArticleId: string | null;
   status: ContentStatus;
