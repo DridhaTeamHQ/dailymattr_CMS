@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  BellRing,
   Check,
   ListOrdered,
   Plus,
@@ -25,8 +26,11 @@ import {
   approveArticle,
   listContentByKind,
   listContentStats,
-  statKey,
   listNewsStudio,
+  listNotified,
+  notifyReaders,
+  pushAudienceSize,
+  statKey,
   listNewsStudioByIds,
   listSelections,
   listUsers,
@@ -92,6 +96,8 @@ function ArticlesTabs() {
 
     /* After the lists, because comment counts are asked for by id and live in
        whichever project owns the story — DB A for the feed, here for ours. */
+    const [notified, audience] = await Promise.all([listNotified(), pushAudienceSize()]);
+
     const [feedArticles, stats] = await Promise.all([
       listNewsStudioByIds(selections.map((s) => s.articleId)),
       user && can.seeStats(user.role)
@@ -102,7 +108,7 @@ function ArticlesTabs() {
         : new Map<string, ContentStats>(),
     ]);
 
-    return { selections, written, users, feedArticles, stats };
+    return { selections, written, users, feedArticles, stats, notified, audience };
   });
 
   /* One page of the grid. Re-runs on page or search change only; useQuery
@@ -165,6 +171,41 @@ function ArticlesTabs() {
     const approved = data?.selections.some((s) => s.articleId === art.id);
     if (approved) await unapprove(art);
     else await approve(art);
+  };
+
+  /* Notifying is its own act, not a consequence of featuring.
+
+     A push reaches every install at once and cannot be recalled, so it stays a
+     decision someone makes while looking at the recipient count. The database
+     refuses a second send for the same story, so the disabled state here is a
+     courtesy rather than the guard. */
+  const notify = async (art: NewsStudioArticle) => {
+    const audience = data?.audience ?? 0;
+    if (!data || data.notified.has(statKey("pipeline", art.id)) || audience === 0) return;
+    if (
+      !window.confirm(
+        `Notify ${audience} ${audience === 1 ? "reader" : "readers"} about "${art.title}"?
+
+This cannot be undone or recalled.`,
+      )
+    )
+      return;
+
+    await toast.run(
+      async () => {
+        const r = await notifyReaders({
+          source: "pipeline",
+          contentId: art.id,
+          title: art.title,
+          body: art.summary,
+        });
+        if (r.failed > 0) {
+          throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);
+        }
+      },
+      { success: "Readers notified", error: "Couldn't notify readers" },
+    );
+    refetch();
   };
 
   const toggleFeature = async (art: NewsStudioArticle) => {
@@ -593,6 +634,25 @@ function ArticlesTabs() {
                               <Star size={14} />
                             )}
                           </button>
+                          {sel.isFeatured && (
+                            <button
+                              onClick={() => notify(art)}
+                              disabled={
+                                data.notified.has(statKey("pipeline", art.id)) ||
+                                data.audience === 0
+                              }
+                              title={
+                                data.notified.has(statKey("pipeline", art.id))
+                                  ? "Readers have already been notified"
+                                  : data.audience === 0
+                                    ? "No reader has push enabled yet"
+                                    : `Notify ${data.audience} ${data.audience === 1 ? "reader" : "readers"}`
+                              }
+                              className="btn-ghost flex h-9 w-9 items-center justify-center !p-0 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <BellRing size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => unapprove(art)}
                             title="Remove from app feed"
