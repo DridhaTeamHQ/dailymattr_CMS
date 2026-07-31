@@ -29,25 +29,16 @@ type Body = {
   image?: string;
 };
 
-/* A notification is a headline, not the story.
+/* A notification is the headline and nothing else.
  *
- * The body used to be the whole summary, which on a phone is a wall of text
- * that has already told the reader everything — leaving no reason to open the
- * app, which is the one thing a push is for. Cut at a sentence boundary so it
- * ends like a sentence rather than mid-word. */
-const TEASER_MAX = 160;
-
-function teaser(text: string): string | undefined {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return undefined;
-  if (clean.length <= TEASER_MAX) return clean;
-  const cut = clean.slice(0, TEASER_MAX);
-  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
-  // Only honour a sentence break in the back half; an early one would throw
-  // away most of the teaser to gain a full stop.
-  if (stop > TEASER_MAX * 0.5) return cut.slice(0, stop + 1);
-  return cut.slice(0, cut.lastIndexOf(" ")).trimEnd() + "…";
-}
+ * It carried the summary at first — a wall of text that told the reader the
+ * whole story on the lock screen and left no reason to open the app, which is
+ * the one thing a push is for. A teaser was better and still answered the
+ * question before it was asked. A headline is what a news alert has always
+ * been: enough to decide, not enough to finish.
+ *
+ * The summary still travels in `data`, so a future in-app inbox can show it
+ * without another round trip. It just never reaches the shade. */
 
 /** Only an absolute http(s) URL can be fetched by a phone. */
 function usableImage(url: string | undefined): string | undefined {
@@ -147,10 +138,12 @@ export async function POST(req: Request) {
     to,
     sound: "default",
     title: title.trim(),
-    body: teaser(body ?? ""),
-    // What the app reads on tap to open the right story — see
-    // addNotificationTapListener in the app's lib/notifications.
-    data: { articleId: source === "cms" ? `cms:${contentId}` : contentId },
+    // No body on purpose — see the note above.
+    data: {
+      articleId: source === "cms" ? `cms:${contentId}` : contentId,
+      // Carried but not displayed: an in-app list can use it later.
+      summary: (body ?? "").trim() || undefined,
+    },
     channelId: "breaking",
     // Delivered now rather than batched with the system's next wake-up. A
     // story the desk chose to interrupt someone for is not a background sync.
