@@ -17,6 +17,13 @@ import {
 } from "lucide-react";
 import NewsVisual from "./NewsVisual";
 import { Modal, Pill } from "./ui";
+import {
+  EMPTY_MODES,
+  ReadingModesPanel,
+  modesAreEmpty,
+  tidyModes,
+  type ReadingModes,
+} from "./ReadingModesPanel";
 import { timeAgo } from "@/lib/store";
 import {
   ARTICLE_DESC_MAX,
@@ -85,6 +92,7 @@ export default function ArticlePreview({
     titleOverride: string | null;
     summaryOverride: string | null;
     imageOverride: string | null;
+    modesOverride: ReadingModes | null;
   }) => void;
   onToggleFeed: () => void;
   onToggleFeature: () => void;
@@ -92,6 +100,7 @@ export default function ArticlePreview({
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [image, setImage] = useState("");
+  const [modes, setModes] = useState<ReadingModes>(EMPTY_MODES);
   const [savedAt, setSavedAt] = useState(0);
   const [fitting, setFitting] = useState(false);
   const [fitErr, setFitErr] = useState<string | null>(null);
@@ -104,6 +113,7 @@ export default function ArticlePreview({
     if (!article) return;
     setTitle(selection?.titleOverride ?? article.title);
     setSummary(selection?.summaryOverride ?? article.summary);
+    setModes({ ...EMPTY_MODES, ...(selection?.modesOverride ?? {}) });
     setImage(selection?.imageOverride ?? article.imageUrl);
     setFitErr(null);
     setFitMsg(null);
@@ -177,6 +187,10 @@ export default function ArticlePreview({
       titleOverride: title === article.title ? null : title,
       summaryOverride: summary === article.summary ? null : summary,
       imageOverride: image === article.imageUrl ? null : image || null,
+      /* Null rather than an empty object when there is nothing to say, so the
+         app falls back to whatever the pipeline summariser produced instead of
+         being handed a mode set with no modes in it. */
+      modesOverride: modesAreEmpty(modes) ? null : tidyModes(modes),
     });
     setSavedAt(Date.now());
     setTimeout(() => setSavedAt(0), 1600);
@@ -422,6 +436,22 @@ export default function ArticlePreview({
                     <RotateCcw size={13} />
                   </button>
                 )}
+              </div>
+
+              {/* The wire summariser reached a fraction of the feed, so most
+                  stories arrive with no retellings at all. This is where the
+                  desk writes them; they save as an override beside the
+                  headline and summary, because DB A is never written to. */}
+              <div className="mt-5">
+                <ReadingModesPanel
+                  modes={modes}
+                  onChange={setModes}
+                  story={{ title, summary }}
+                  disabled={!inFeed}
+                />
+              </div>
+
+              <div className="mt-4 flex items-center gap-2">
                 <button
                   onClick={save}
                   disabled={!inFeed || !edited || overLimit}

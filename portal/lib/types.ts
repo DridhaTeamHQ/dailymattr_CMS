@@ -116,6 +116,9 @@ export interface ArticleSelection {
   titleOverride?: string | null;
   summaryOverride?: string | null;
   imageOverride?: string | null;
+  /** Reading modes written by the desk. DB A owns articles.versions and is
+   *  never written to, so these live here like the other overrides. */
+  modesOverride?: { eli5: string; tldr: string[]; keyNumbers: string[] } | null;
 }
 
 /** One row of the user_performance view — aggregated in Postgres. */

@@ -127,6 +127,8 @@ const toSelection = (r: Row, index: number): ArticleSelection => ({
   titleOverride: (r.title_override as string | null) ?? null,
   summaryOverride: (r.summary_override as string | null) ?? null,
   imageOverride: (r.image_override as string | null) ?? null,
+  modesOverride:
+    (r.modes_override as ArticleSelection["modesOverride"]) ?? null,
 });
 
 const toAudit = (r: Row): AuditEntry => ({
@@ -656,6 +658,7 @@ export async function updateSelection(
   if (patch.summaryOverride !== undefined)
     row.summary_override = patch.summaryOverride;
   if (patch.imageOverride !== undefined) row.image_override = patch.imageOverride;
+  if (patch.modesOverride !== undefined) row.modes_override = patch.modesOverride;
   const { error } = await supabase
     .from("article_selections")
     .update(row)

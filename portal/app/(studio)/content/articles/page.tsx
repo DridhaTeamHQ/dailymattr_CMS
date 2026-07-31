@@ -42,7 +42,7 @@ import { StatsStrip } from "@/components/StatsStrip";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { ArticlesSkeleton } from "@/components/PageSkeleton";
-import type { ContentStats, NewsStudioArticle } from "@/lib/types";
+import type { ArticleSelection, ContentStats, NewsStudioArticle } from "@/lib/types";
 
 type Tab = "newsstudio" | "cms" | "feed";
 
@@ -235,6 +235,7 @@ This cannot be undone or recalled.`,
       titleOverride: string | null;
       summaryOverride: string | null;
       imageOverride: string | null;
+      modesOverride: ArticleSelection["modesOverride"];
     }
   ) => {
     await toast.run(
