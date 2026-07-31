@@ -12,6 +12,13 @@ import { SummaryAudioConverter } from "@/components/SummaryAudioConverter";
 import { SectionHeader, StatusPill } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
+import {
+  EMPTY_MODES,
+  ReadingModesPanel,
+  modesAreEmpty,
+  tidyModes,
+  type ReadingModes,
+} from "@/components/ReadingModesPanel";
 import { isMediaFile, mediaBlocker, rehostable } from "@/lib/media";
 import {
   createContent,
@@ -231,6 +238,26 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
           }
         : it
     );
+
+  /* Reading modes live on the item's body, like Pix key points — one JSONB
+     column holding whatever the format needs. Stripped of blanks on the way in
+     so the app never renders an empty bullet, and dropped entirely when there
+     is nothing worth saving, because the app treats an empty set and a missing
+     one identically and a `{}` left behind reads as "someone tried". */
+  const modes: ReadingModes = {
+    ...EMPTY_MODES,
+    ...((item.body as Record<string, unknown>)?.modes as ReadingModes | undefined),
+  };
+
+  const setModes = (next: ReadingModes) =>
+    setItem((it) => {
+      if (!it) return it;
+      const body = { ...it.body } as Record<string, unknown>;
+      const tidy = tidyModes(next);
+      if (modesAreEmpty(tidy)) delete body.modes;
+      else body.modes = tidy;
+      return { ...it, body };
+    });
 
   /** Fills the form from a scraped source. Returns the field names it touched. */
   const applyImport = (d: ImportedArticle, overwrite: boolean): string[] => {
@@ -773,6 +800,16 @@ export default function ContentEditor({ kind }: { kind: ContentKind }) {
             />
           </div>
           )}
+
+          {/* Offered to every format. A Pix already ships its key points as the
+              60-second read, but nothing carries an "Explain like I'm 5" until
+              someone writes one — which is the gap this closes. */}
+          <ReadingModesPanel
+            modes={modes}
+            onChange={setModes}
+            story={{ title: item.title, summary: item.summary }}
+            disabled={!editable}
+          />
 
           {kind === "trax" && (
             <div className="rounded-2xl border border-line bg-tint/20 p-5 space-y-4">
