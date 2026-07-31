@@ -11,7 +11,7 @@
  */
 
 import { localMediaPath, mediaBlocker, rehostable } from "./media";
-import { MEDIA, uploadBlob } from "./storage";
+import { COVERS, MEDIA, uploadBlob, uploadDataUrl } from "./storage";
 import { newsstudio, supabase } from "./supabase";
 import type {
   ArticleSelection,
@@ -562,6 +562,19 @@ export async function setContentStatus(
      * are worth interrupting for. */
     if (current && rehostable(current.mediaUrl)) {
       current = { ...current, mediaUrl: await hostLocalMedia(current) };
+    }
+
+    /* And the cover, for the same reason with a sharper edge.
+     *
+     * A cover pasted or composed as a data: URI is stored inline in the row,
+     * so every reader downloads it as part of the feed JSON — not once, but on
+     * every poll. Fifteen of them had reached 4.2MB between them, one alone at
+     * 1.9MB, on a query the app repeats every thirty seconds. That is what a
+     * statement timeout on the feed turned out to be. */
+    if (current?.coverUrl?.startsWith("data:")) {
+      const hosted = await uploadDataUrl(COVERS, current.coverUrl, "cover");
+      await supabase.from("content_items").update({ cover_url: hosted }).eq("id", id);
+      current = { ...current, coverUrl: hosted };
     }
 
     const blocker = current && mediaBlocker(current.kind, current.mediaUrl);
