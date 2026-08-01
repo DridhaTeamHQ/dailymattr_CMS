@@ -12,6 +12,7 @@
  */
 
 import { InvalidInputError, assertPublicUrl, safeFetch } from "./safeFetch";
+import { stripTagBlocks } from "./html";
 
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
@@ -290,10 +291,10 @@ function firstSrcFromSet(value: string | null): string | null {
 }
 
 function stripTags(value: string): string {
-  return value
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ");
+  // See lib/html.ts — a lazy regex here is (opening tags × page length), which
+  // a hostile page picks both halves of, and this runs over twelve fetched
+  // pages per listing scrape.
+  return stripTagBlocks(value, ["script", "style"]).replace(/<[^>]+>/g, " ");
 }
 
 function cleanupText(value: string): string {
@@ -431,11 +432,17 @@ function normalizeUrl(value: string): string {
 }
 
 function extractArticleText(html: string, title = ""): string {
-  const stripped = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<(?:header|footer|nav|aside|form|button)\b[\s\S]*?<\/(?:header|footer|nav|aside|form|button)>/gi, " ");
+  const stripped = stripTagBlocks(html, [
+    "script",
+    "style",
+    "svg",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "form",
+    "button",
+  ]);
 
   const scopes = extractArticleScopes(stripped);
   const scoredScopes = scopes.map((scope, index) => {

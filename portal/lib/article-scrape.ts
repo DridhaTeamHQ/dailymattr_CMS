@@ -12,6 +12,7 @@ import {
   assertPublicUrl,
   safeFetch,
 } from "./safeFetch";
+import { stripTagBlocks } from "./html";
 import { ARTICLE_DESC_MAX, ARTICLE_TITLE_MAX } from "./types";
 
 export { assertPublicUrl };
@@ -152,9 +153,13 @@ export interface ExtractedArticle {
  * DOM library — we only need a bag of sentences for the model, not fidelity.
  */
 export function extractArticle(html: string, finalUrl: string): ExtractedArticle {
-  const cleaned = html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|svg|iframe|template)\b[\s\S]*?<\/\1>/gi, " ");
+  // stripTagBlocks rather than a lazy regex with a backreference: the regex
+  // cost 19 seconds on a crafted 2 MB page of unclosed tags, on the single
+  // thread every other request shares. See lib/html.ts.
+  const cleaned = stripTagBlocks(
+    html.replace(/<!--[\s\S]*?-->/g, " "),
+    ["script", "style", "noscript", "svg", "iframe", "template"]
+  );
 
   const pageTitle =
     metaContent(html, ["og:title", "twitter:title"]) ??
@@ -187,8 +192,14 @@ export function extractArticle(html: string, finalUrl: string): ExtractedArticle
   // Prefer the <article> body when the page marks one up; fall back to <body>.
   const article = cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
   const body = cleaned.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? cleaned;
-  const scope = (article && article.length > 400 ? article : body)
-    .replace(/<(nav|header|footer|aside|form|figcaption)\b[\s\S]*?<\/\1>/gi, " ");
+  const scope = stripTagBlocks(article && article.length > 400 ? article : body, [
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "form",
+    "figcaption",
+  ]);
 
   const text = extractProse(scope).slice(0, MAX_TEXT_CHARS);
 
