@@ -145,6 +145,31 @@ const fail = (what: string, error: { message: string } | null) => {
   if (error) throw new Error(`${what}: ${error.message}`);
 };
 
+/**
+ * The ceiling PostgREST applies whether we ask for one or not.
+ *
+ * A select with no limit is not unlimited — the server caps the response and
+ * returns the first N rows with no error and no indication that anything was
+ * left behind. That is the worst shape a limit can take: the page renders, the
+ * counts look plausible, and rows are simply missing.
+ *
+ * Asking explicitly does not raise the ceiling. It makes it visible, so
+ * `capped()` below can say when a list came back full and is therefore
+ * probably short of the truth.
+ */
+const ROW_CAP = 1000;
+
+/** Warns once a list comes back at exactly the cap, which means it likely hit it. */
+const capped = (what: string, rows: unknown[]) => {
+  if (rows.length >= ROW_CAP) {
+    console.warn(
+      `[db] ${what} returned ${rows.length} rows, the maximum a single request ` +
+        `can return — some are almost certainly missing. This needs paging.`
+    );
+  }
+  return rows;
+};
+
 // ── users ───────────────────────────────────────────────────────────
 export async function listUsers(): Promise<CmsUser[]> {
   const { data, error } = await supabase
@@ -251,9 +276,13 @@ export async function removeCategory(slug: string) {
 export async function listContent(kind?: ContentKind): Promise<ContentItem[]> {
   let q = supabase.from("content_items").select("*");
   if (kind) q = q.eq("kind", kind);
-  const { data, error } = await q.order("updated_at", { ascending: false });
+  const { data, error } = await q
+    .order("updated_at", { ascending: false })
+    .limit(ROW_CAP);
   fail("listContent", error);
-  return (data ?? []).map(toContent);
+  // Newest first, so the rows lost at the ceiling are the oldest — the least
+  // bad way for this to run out, since both callers care about recent work.
+  return (capped("listContent", data ?? []) as Row[]).map(toContent);
 }
 
 /** A live item as a ranking table needs it: enough to label a row, no more. */
@@ -676,12 +705,25 @@ const statusVerb = (s: ContentStatus) =>
 
 // ── app feed (approved NewsStudio articles) ─────────────────────────
 export async function listSelections(): Promise<ArticleSelection[]> {
+  /* Fetched newest first and turned back afterwards.
+   *
+   * Feed order is approval order, so these have to be read oldest-first — but
+   * asking for them that way means the rows lost at the ceiling are the most
+   * recent approvals, which is the worst thing this list can lose. Someone
+   * approves a story, it does not appear, and nothing says why.
+   *
+   * Descending then reversed keeps the same order in hand while dropping the
+   * oldest instead. Position is counted within what came back, so past the
+   * ceiling the numbering starts from the oldest still present — wrong in a way
+   * that is visible and bounded, rather than a story silently going missing. */
   const { data, error } = await supabase
     .from("article_selections")
     .select("*")
-    .order("approved_at");
+    .order("approved_at", { ascending: false })
+    .limit(ROW_CAP);
   fail("listSelections", error);
-  return (data ?? []).map(toSelection);
+  const rows = capped("listSelections", data ?? []) as Row[];
+  return rows.slice().reverse().map(toSelection);
 }
 
 export async function approveArticle(
@@ -758,16 +800,36 @@ export async function listContentStats(
   cmsIds: string[] = []
 ): Promise<Map<string, ContentStats>> {
   const out = new Map<string, ContentStats>();
+  /* Only the ids being asked about.
+   *
+   * This selected the whole table and then looked up the handful of rows the
+   * caller wanted, which is both more data than anyone needs and silently
+   * capped — past the ceiling the stats for a story simply did not arrive, and
+   * a card showed zeroes as though nobody had ever read it.
+   *
+   * Requested in batches because these ids travel in the query string, and a
+   * few hundred uuids is enough to run into URL length limits. */
+  const wanted = [...new Set([...pipelineIds, ...cmsIds])].filter(Boolean);
+  const BATCH = 150;
+
   try {
-    const { data, error } = await supabase.from("content_stats").select("*");
-    if (error) {
-      // 42P01 is "relation does not exist" — the migration is not applied.
-      if (!/does not exist|permission denied/i.test(error.message)) {
-        console.warn("[stats]", error.message);
+    const rows: Row[] = [];
+    for (let i = 0; i < wanted.length; i += BATCH) {
+      const { data, error } = await supabase
+        .from("content_stats")
+        .select("*")
+        .in("content_id", wanted.slice(i, i + BATCH));
+      if (error) {
+        // 42P01 is "relation does not exist" — the migration is not applied.
+        if (!/does not exist|permission denied/i.test(error.message)) {
+          console.warn("[stats]", error.message);
+        }
+        return out;
       }
-      return out;
+      rows.push(...((data ?? []) as Row[]));
     }
-    for (const r of (data ?? []) as Row[]) {
+
+    for (const r of rows) {
       const source = (r.source as StatsSource) ?? "cms";
       out.set(statKey(source, r.content_id as string), {
         source,

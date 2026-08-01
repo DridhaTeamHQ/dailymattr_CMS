@@ -174,28 +174,46 @@ async function main() {
   );
 
   // ── /api/tts ──────────────────────────────────────────────────────
+  //
+  // Each case declares its own address. Sharing one bucket meant a burst test
+  // could spend the quota a validation test needed, so two runs at once — or
+  // one run against a server that had just been poked by hand — reported 429
+  // where it expected 400, and read as a regression in code nobody had
+  // touched. A test that fails for a reason outside the thing it is testing is
+  // worse than no test.
   console.log("\n/api/tts");
-  check("rejects missing text", (await get("/api/tts")).status === 400);
+  const ttsIp = (n) => ({ "X-Forwarded-For": `198.51.100.${n}` });
+
+  check("rejects missing text", (await get("/api/tts", ttsIp(10))).status === 400);
   check(
     "rejects an oversized body of text",
-    (await get(`/api/tts?text=${"a".repeat(2000)}&lang=en`)).status === 413
+    (await get(`/api/tts?text=${"a".repeat(2000)}&lang=en`, ttsIp(11))).status === 413
   );
-  for (const lang of ["en&client=injected", "../../etc", "toolongtobealang", "e"]) {
-    check(
-      `rejects lang "${lang}"`,
-      (await get(`/api/tts?text=hi&lang=${encodeURIComponent(lang)}`)).status === 400
-    );
+  {
+    let n = 20;
+    for (const lang of ["en&client=injected", "../../etc", "toolongtobealang", "e"]) {
+      check(
+        `rejects lang "${lang}"`,
+        (
+          await get(
+            `/api/tts?text=hi&lang=${encodeURIComponent(lang)}`,
+            ttsIp(n++)
+          )
+        ).status === 400
+      );
+    }
   }
   {
-    const r = await get("/api/tts?text=Hello%20from%20DailyMattr&lang=en");
+    const r = await get("/api/tts?text=Hello%20from%20DailyMattr&lang=en", ttsIp(30));
     check("synthesises valid input", [200, 429, 502].includes(r.status), `status ${r.status}`);
     if (r.status === 200) check("returns audio/mpeg", (r.type ?? "").includes("audio/mpeg"));
   }
   {
     // One call fans out to ten upstream requests, so it has to be metered.
+    // Its own address, so the burst cannot starve anything above it.
     let sawLimit = false;
     for (let i = 0; i < 26 && !sawLimit; i++) {
-      const r = await get(`/api/tts?text=burst%20${i}&lang=en`);
+      const r = await get(`/api/tts?text=burst%20${i}&lang=en`, ttsIp(40));
       if (r.status === 429) sawLimit = true;
     }
     check("rate limits a burst", sawLimit, "26 requests without a 429");
