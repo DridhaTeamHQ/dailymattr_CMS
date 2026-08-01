@@ -83,6 +83,44 @@ select * from (values
 
 rollback;
 
+-- ── comments can be taken down, and only by the right people ────────
+--
+-- The interesting result here is the writer's: RLS answers a refused delete
+-- with success and zero rows, not an error. lib/db.ts checks the row count for
+-- exactly that reason — a takedown that silently did not happen is the worst
+-- outcome this feature has.
+begin;
+
+insert into content_items (id, kind, title, slug, summary, body, status, created_by, language)
+values ('faaaaaaa-0000-4000-8000-00000000feed', 'pix', 'moderation probe', 'mod-probe',
+        'x', '{}', 'published', '33333333-3333-4333-8333-333333333333', 'en');
+insert into content_comments (id, content_id, device_id, body)
+values ('fbbbbbbb-0000-4000-8000-00000000c001', 'faaaaaaa-0000-4000-8000-00000000feed',
+        'device-abcdefgh', 'root comment');
+insert into content_comments (id, parent_id, content_id, device_id, body)
+values ('fbbbbbbb-0000-4000-8000-00000000c002', 'fbbbbbbb-0000-4000-8000-00000000c001',
+        'faaaaaaa-0000-4000-8000-00000000feed', 'device-abcdefgh', 'a reply');
+
+select * from (values
+  ('writer: take a comment down',
+   pg_temp.try($$select pg_temp.as_user('33333333-3333-4333-8333-333333333333')$$),
+   pg_temp.try($$delete from content_comments where id='fbbbbbbb-0000-4000-8000-00000000c002'$$)),
+  ('qa: take a comment down',
+   pg_temp.try($$select pg_temp.as_user('44444444-4444-4444-8444-444444444444')$$),
+   pg_temp.try($$delete from content_comments where id='fbbbbbbb-0000-4000-8000-00000000c002'$$)),
+  ('chief editor: take a root down',
+   pg_temp.try($$select pg_temp.as_user('22222222-2222-4222-8222-222222222222')$$),
+   pg_temp.try($$delete from content_comments where id='fbbbbbbb-0000-4000-8000-00000000c001'$$)),
+  ('replies went with it', '',
+   pg_temp.try($$select 1 from content_comments where content_id='faaaaaaa-0000-4000-8000-00000000feed'$$)),
+  ('writer: post directly, bypassing the app',
+   pg_temp.try($$select pg_temp.as_user('33333333-3333-4333-8333-333333333333')$$),
+   pg_temp.try($$insert into content_comments (content_id, device_id, body)
+                 values ('faaaaaaa-0000-4000-8000-00000000feed','device-abcdefgh','sneak')$$))
+) as t(test, _ctx, result);
+
+rollback;
+
 -- ── the error log reports up, never down ────────────────────────────
 --
 -- Anyone signed in must be able to file a report, or the failures worth having

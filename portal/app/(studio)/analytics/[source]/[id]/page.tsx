@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
   MessagesSquare,
   Share2,
   ThumbsDown,
+  Trash2,
 } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { fmt } from "@/components/StatsStrip";
@@ -20,7 +21,8 @@ import { can, useAuth } from "@/lib/auth";
 import { useQuery } from "@/lib/useQuery";
 import { timeAgo } from "@/lib/store";
 import { KIND_LABEL, loadAnalytics } from "@/lib/analytics";
-import { listCommentsFor, readerName } from "@/lib/db";
+import { deleteComment, listCommentsFor, readerName } from "@/lib/db";
+import { useToast } from "@/lib/toast";
 import type { ContentComment, StatsSource } from "@/lib/types";
 
 /* One story, in full.
@@ -47,7 +49,7 @@ export default function AnalyticsDetailPage() {
   /* Its own query rather than part of loadAnalytics: the list page needs
      counts for everything and would otherwise fetch every thread in the
      library to render numbers it already has. */
-  const { data: comments } = useQuery(
+  const { data: comments, refetch: refetchComments } = useQuery(
     () =>
       listCommentsFor(params.source as StatsSource, params.id).catch(() => []),
     [params.source, params.id]
@@ -216,7 +218,13 @@ export default function AnalyticsDetailPage() {
         ))}
       </div>
 
-      <CommentThread comments={comments} written={s.comments} />
+      <CommentThread
+        comments={comments}
+        written={s.comments}
+        source={params.source as StatsSource}
+        canModerate={!!user && can.review(user.role)}
+        onRemoved={refetchComments}
+      />
 
       <div className="card mt-5 p-5">
         <h2 className="mb-3 text-sm font-bold">Rates</h2>
@@ -245,10 +253,30 @@ export default function AnalyticsDetailPage() {
 function CommentThread({
   comments,
   written,
+  source,
+  canModerate,
+  onRemoved,
 }: {
   comments: ContentComment[] | null;
   written: number;
+  source: StatsSource;
+  /** Reviewers and above — the same people who decide what reaches readers. */
+  canModerate: boolean;
+  onRemoved: () => void;
 }) {
+  const toast = useToast();
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const remove = async (c: ContentComment) => {
+    setRemoving(c.id);
+    const ok = await toast.run(() => deleteComment(source, c.id), {
+      success: `Comment by ${readerName(c.deviceId)} removed`,
+      error: "That comment was not removed",
+    });
+    setRemoving(null);
+    if (ok) onRemoved();
+  };
+
   const rows = (() => {
     const all = comments ?? [];
     const roots = all.filter((c) => !c.parentId);
@@ -322,6 +350,24 @@ function CommentThread({
                   {c.body}
                 </p>
               </div>
+              {/* Takedown. Only for the CMS's own content: a pipeline article's
+                  thread lives in a database this project reads and never
+                  writes, so there is no button rather than one that fails. */}
+              {canModerate && source === "cms" && (
+                <button
+                  onClick={() => remove(c)}
+                  disabled={removing === c.id}
+                  title={
+                    c.replyCount > 0
+                      ? `Remove this comment and its ${c.replyCount} ${c.replyCount === 1 ? "reply" : "replies"}`
+                      : "Remove this comment"
+                  }
+                  aria-label="Remove comment"
+                  className="mt-0.5 shrink-0 self-start rounded-lg p-1.5 text-faint transition-colors hover:bg-rose-tint hover:text-rose disabled:opacity-40"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>

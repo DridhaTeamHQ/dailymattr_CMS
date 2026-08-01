@@ -1005,6 +1005,44 @@ export async function listCommentsFor(
 }
 
 /**
+ * Takes a comment down.
+ *
+ * Only for comments on the CMS's own content. Pipeline articles keep their
+ * threads in DB A, which this project reads and never writes — so a comment
+ * there cannot be removed from here, and the caller is told so plainly rather
+ * than being handed a button that quietly does nothing.
+ *
+ * Replies and likes go with it: both cascade from content_comments(id).
+ *
+ * Unlike the read above this does not swallow its failure. A takedown that
+ * silently did not happen is the one outcome worth interrupting someone for —
+ * RLS answers a refused delete with success and zero rows, so the row count is
+ * what decides, not the absence of an error.
+ */
+export async function deleteComment(
+  source: StatsSource,
+  id: string
+): Promise<void> {
+  if (source === "pipeline") {
+    throw new Error(
+      "Comments on pipeline articles live in the NewsStudio database, which the Studio only reads. Remove it there."
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("content_comments")
+    .delete()
+    .eq("id", id)
+    .select("id");
+  fail("deleteComment", error);
+  if (!data?.length) {
+    throw new Error(
+      "That comment was not removed — reviewers and above can take comments down."
+    );
+  }
+}
+
+/**
  * The same pseudonym the reader sees in the app.
  *
  * There are no accounts, only a device id, and a thread reads badly when
