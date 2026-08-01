@@ -32,16 +32,54 @@ export const modesAreEmpty = (m: ReadingModes | null | undefined) =>
     m.tldr.every((s) => !s.trim()) &&
     m.keyNumbers.every((s) => !s.trim()));
 
-/** Strips blanks so the app never renders an empty bullet. */
+export const ELI5_MAX = 400;
+export const POINT_MAX = 110;
+export const MAX_POINTS = 4;
+
+/**
+ * Strips blanks so the app never renders an empty bullet, and holds every field
+ * to the length the card can show.
+ *
+ * The clamp is the last line rather than the first: the editor is stopped
+ * before saving something too long, so this should never have anything to cut.
+ * It is here because the model's output is clamped where it is generated, and
+ * anything reaching the database by some other route deserves the same
+ * treatment — a bullet that overruns is clipped by the reader with nothing to
+ * say it was.
+ */
 export const tidyModes = (m: ReadingModes): ReadingModes => ({
-  eli5: m.eli5.trim(),
-  tldr: m.tldr.map((s) => s.trim()).filter(Boolean),
-  keyNumbers: m.keyNumbers.map((s) => s.trim()).filter(Boolean),
+  eli5: m.eli5.trim().slice(0, ELI5_MAX),
+  tldr: m.tldr
+    .map((s) => s.trim().slice(0, POINT_MAX))
+    .filter(Boolean)
+    .slice(0, MAX_POINTS),
+  keyNumbers: m.keyNumbers
+    .map((s) => s.trim().slice(0, POINT_MAX))
+    .filter(Boolean)
+    .slice(0, MAX_POINTS),
 });
 
-const ELI5_MAX = 400;
-const POINT_MAX = 110;
-const MAX_POINTS = 4;
+/** True when anything in here is longer than the card will show. */
+export const modesOverLimit = (m: ReadingModes): boolean =>
+  m.eli5.length > ELI5_MAX ||
+  m.tldr.some((s) => s.length > POINT_MAX) ||
+  m.keyNumbers.some((s) => s.length > POINT_MAX);
+
+/** Field-by-field, because jsonb hands keys back in its own order. */
+export const modesEqual = (
+  a: ReadingModes | null | undefined,
+  b: ReadingModes | null | undefined
+): boolean => {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const sameList = (x: string[] = [], y: string[] = []) =>
+    x.length === y.length && x.every((v, i) => v === y[i]);
+  return (
+    a.eli5 === b.eli5 &&
+    sameList(a.tldr, b.tldr) &&
+    sameList(a.keyNumbers, b.keyNumbers)
+  );
+};
 
 function PointList({
   label,

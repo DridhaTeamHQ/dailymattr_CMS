@@ -21,6 +21,8 @@ import {
   EMPTY_MODES,
   ReadingModesPanel,
   modesAreEmpty,
+  modesEqual,
+  modesOverLimit,
   tidyModes,
   type ReadingModes,
 } from "./ReadingModesPanel";
@@ -126,12 +128,30 @@ export default function ArticlePreview({
   // at twice what fits. Count the characters the card actually holds.
   const titleChars = title.length;
   const descChars = summary.length;
+  /* Reading modes count as an edit and as copy that can overrun.
+   *
+   * Neither used to be true, and the first one meant the panel could not be
+   * saved at all: `edited` compared the title, the summary and the photograph,
+   * so writing or generating modes and changing nothing else left Save greyed
+   * out with no explanation. The only way to store them was to alter something
+   * unrelated first.
+   *
+   * Compared against what is already stored, field by field, because the
+   * modes come back from jsonb with keys in its own order — stringifying both
+   * sides would report a change on every open. */
+  const storedModes = (selection?.modesOverride ?? null) as ReadingModes | null;
+  const nextModes = modesAreEmpty(modes) ? null : tidyModes(modes);
+  const modesEdited = !modesEqual(storedModes, nextModes);
+
   const overLimit =
-    titleChars > ARTICLE_TITLE_MAX || descChars > ARTICLE_DESC_MAX;
+    titleChars > ARTICLE_TITLE_MAX ||
+    descChars > ARTICLE_DESC_MAX ||
+    modesOverLimit(modes);
   const edited =
     title !== article.title ||
     summary !== article.summary ||
-    image !== article.imageUrl;
+    image !== article.imageUrl ||
+    modesEdited;
   const inFeed = !!selection;
   const hue = sourceHue(article.source);
   const initials = article.source
@@ -189,8 +209,9 @@ export default function ArticlePreview({
       imageOverride: image === article.imageUrl ? null : image || null,
       /* Null rather than an empty object when there is nothing to say, so the
          app falls back to whatever the pipeline summariser produced instead of
-         being handed a mode set with no modes in it. */
-      modesOverride: modesAreEmpty(modes) ? null : tidyModes(modes),
+         being handed a mode set with no modes in it. Already computed above,
+         where it is also what decides whether anything changed. */
+      modesOverride: nextModes,
     });
     setSavedAt(Date.now());
     setTimeout(() => setSavedAt(0), 1600);
