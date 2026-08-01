@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /**
  * A list's page number, kept in the query string.
@@ -26,8 +26,24 @@ export function usePageParam(key = "page"): [number, (page: number) => void] {
   const raw = Number(params.get(key));
   const page = Number.isInteger(raw) && raw > 0 ? raw : 1;
 
+  /* Read through a ref rather than closing over the values.
+     `setPage` is a dependency of the effects that reset a list to page one —
+     a new search term, a page number left past the end of a shrunken list.
+     Built from `params`, its identity changed every time the query string
+     moved, which is exactly what those effects were watching for: clicking
+     "2" wrote ?page=2, that rebuilt setPage, that re-ran the reset effect,
+     and the grid snapped back to page one before the new page could load.
+     Nothing but `key` and the router is a real input, so keep it stable. */
+  const latest = useRef({ params, pathname });
+  // First effect declared by this hook, so it has refreshed before any effect
+  // in the calling component gets to call setPage.
+  useEffect(() => {
+    latest.current = { params, pathname };
+  }, [params, pathname]);
+
   const setPage = useCallback(
     (next: number) => {
+      const { params, pathname } = latest.current;
       const target = next <= 1 ? null : String(next);
       // Callers reset to page one freely — on a tab switch, and on every
       // keystroke in a search box. Without this, each of those would push an
@@ -41,7 +57,7 @@ export function usePageParam(key = "page"): [number, (page: number) => void] {
       const query = q.toString();
       router.push(query ? `${pathname}?${query}` : pathname);
     },
-    [key, params, pathname, router]
+    [key, router]
   );
 
   return [page, setPage];
