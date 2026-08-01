@@ -11,6 +11,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { THEME_BOOTSTRAP, ThemeProvider } from "@/lib/theme";
 import { ToastProvider } from "@/lib/toast";
+import ErrorReporter from "@/components/ErrorReporter";
 import { cn } from "@/lib/utils";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -87,6 +88,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>
       <body className="min-h-full font-sans">
+        {/* Outside the providers: a failure in one of them is exactly the kind
+            worth catching, and a reporter mounted underneath would come down
+            with it. */}
+        <ErrorReporter />
         <ThemeProvider>
           {/* Above AuthProvider so sign-in and sign-out can announce
               themselves too, not only what happens once inside. */}

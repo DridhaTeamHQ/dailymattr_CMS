@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportError } from "@/lib/report";
 
 export default function Error({
   error,
@@ -11,6 +12,9 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error("App error:", error);
+    // A render that failed hard enough to reach a boundary is the most useful
+    // report there is, and it was going no further than this console.
+    reportError(error, "boundary", error.digest);
   }, [error]);
 
   return (

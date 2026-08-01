@@ -83,6 +83,45 @@ select * from (values
 
 rollback;
 
+-- ── the error log reports up, never down ────────────────────────────
+--
+-- Anyone signed in must be able to file a report, or the failures worth having
+-- are the ones lost. Nobody but an administrator may read them: a stack trace
+-- describes how the software is put together.
+begin;
+
+create or replace function pg_temp.visible(uid text) returns integer language plpgsql as $$
+declare c integer;
+begin
+  perform pg_temp.as_user(uid);
+  select count(*) into c from public.client_errors;
+  return c;
+end $$;
+
+insert into client_errors (actor_id, actor_email, kind, message, stack, path)
+values ('33333333-3333-4333-8333-333333333333', 'writer@dailymattr.com', 'error',
+        'rls probe', 'Error: rls probe at x', '/content/pix');
+
+select * from (values
+  ('writer: file a report',
+   pg_temp.try($$select pg_temp.as_user('33333333-3333-4333-8333-333333333333')$$),
+   pg_temp.try($$insert into client_errors (kind, message) values ('error','rls probe two')$$)),
+  ('writer: rows visible',       '', 'sees ' || pg_temp.visible('33333333-3333-4333-8333-333333333333')),
+  ('qa: rows visible',           '', 'sees ' || pg_temp.visible('44444444-4444-4444-8444-444444444444')),
+  ('chief editor: rows visible', '', 'sees ' || pg_temp.visible('22222222-2222-4222-8222-222222222222')),
+  ('admin: rows visible',        '', 'sees ' || pg_temp.visible('11111111-1111-4111-8111-111111111111')),
+  ('writer: alter a report',
+   pg_temp.try($$select pg_temp.as_user('33333333-3333-4333-8333-333333333333')$$),
+   pg_temp.try($$update client_errors set message='tampered' where message like 'rls probe%'$$)),
+  ('writer: delete a report', '',
+   pg_temp.try($$delete from client_errors where message like 'rls probe%'$$)),
+  ('admin: clear the log',
+   pg_temp.try($$select pg_temp.as_user('11111111-1111-4111-8111-111111111111')$$),
+   pg_temp.try($$delete from client_errors where message like 'rls probe%'$$))
+) as t(test, _ctx, result);
+
+rollback;
+
 -- ── signing in adopts an invited profile ────────────────────────────
 --
 -- Adding someone on the Team page cannot create their Supabase Auth account, so
