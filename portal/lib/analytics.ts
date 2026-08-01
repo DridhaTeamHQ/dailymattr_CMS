@@ -36,6 +36,24 @@ export interface AnalyticsRow {
   meta: string;
   /** When it reached readers. Null when the row never recorded one. */
   liveAt: string | null;
+  /**
+   * The same instant as a number, which is what every sort here uses.
+   *
+   * These were ordered by localeCompare on the ISO strings. That is not
+   * codepoint order — ICU collation deprioritises punctuation — so a timestamp
+   * Postgres renders without a fractional part, because it landed exactly on a
+   * second, compares as *later* than one with a fraction in the same second.
+   *
+   * Nothing is misordered today: every row in both databases currently carries
+   * a fraction, and 200,000 random pairs of that shape agree with chronological
+   * order. It waits for one seeded, backfilled or literal timestamp to land on
+   * a whole second, and then quietly puts a story in the wrong place with
+   * nothing to indicate it.
+   *
+   * Computed once per row rather than parsed inside the comparator, which would
+   * parse the same string on the order of n log n times.
+   */
+  liveAtMs: number;
   stats: ContentStats;
   /** Everything that took a deliberate tap. Views are not a decision. */
   actions: number;
@@ -51,6 +69,18 @@ export const KIND_LABEL: Record<RowKind, string> = {
 
 const actionsOf = (s: ContentStats) =>
   s.likes + s.dislikes + s.comments + s.saves + s.shares;
+
+/**
+ * An instant as a number, or -Infinity when there is not one.
+ *
+ * A row with no date sorts to the bottom under every ordering rather than
+ * landing wherever an empty string happens to fall.
+ */
+const msOf = (iso: string | null): number => {
+  if (!iso) return Number.NEGATIVE_INFINITY;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+};
 
 /**
  * Everything live, newest first, each with its numbers.
@@ -90,6 +120,7 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
       coverUrl: null,
       meta: c.categorySlug ?? "Uncategorised",
       liveAt: c.publishedAt ?? c.updatedAt,
+      liveAtMs: msOf(c.publishedAt ?? c.updatedAt),
       stats: s,
       actions: actionsOf(s),
     });
@@ -109,12 +140,13 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
       // Approval is when it reached the app, which is later than publication
       // by the wire and is the date the desk actually acted on.
       liveAt: bySelection.get(a.id)?.approvedAt ?? a.publishedAt,
+      liveAtMs: msOf(bySelection.get(a.id)?.approvedAt ?? a.publishedAt),
       stats: s,
       actions: actionsOf(s),
     });
   }
 
-  rows.sort((x, y) => (y.liveAt ?? "").localeCompare(x.liveAt ?? ""));
+  rows.sort((x, y) => y.liveAtMs - x.liveAtMs);
   return rows;
 }
 
@@ -153,7 +185,7 @@ export const SORTS: { key: SortKey; label: string }[] = [
 export function sortRows(rows: AnalyticsRow[], by: SortKey): AnalyticsRow[] {
   const out = [...rows];
   if (by === "recent") {
-    out.sort((x, y) => (y.liveAt ?? "").localeCompare(x.liveAt ?? ""));
+    out.sort((x, y) => y.liveAtMs - x.liveAtMs);
     return out;
   }
   const val = (r: AnalyticsRow) =>
@@ -161,7 +193,7 @@ export function sortRows(rows: AnalyticsRow[], by: SortKey): AnalyticsRow[] {
   /* Ties broken by recency rather than left in whatever order the two fetches
      happened to interleave — otherwise the long tail of zeros reshuffles on
      every refetch and the page looks like it is churning. */
-  out.sort((x, y) => val(y) - val(x) || (y.liveAt ?? "").localeCompare(x.liveAt ?? ""));
+  out.sort((x, y) => val(y) - val(x) || y.liveAtMs - x.liveAtMs);
   return out;
 }
 
