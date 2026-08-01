@@ -14,7 +14,7 @@ import { PAGE_SIZES, clampPage, pageSlice } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import { filledPixPoints } from "@/lib/pix";
 import { stripHighlightBrackets } from "@/lib/pixComposer";
-import { listContent, listUsers, logAudit, setContentStatus, updateContent } from "@/lib/db";
+import { listReviewQueue, listUsers, logAudit, setContentStatus, updateContent } from "@/lib/db";
 import { timeAgo } from "@/lib/store";
 import { useQuery } from "@/lib/useQuery";
 import { ReviewSkeleton } from "@/components/PageSkeleton";
@@ -125,12 +125,11 @@ function ReviewQueue() {
   }, [user, router]);
 
   const { data, error, refetch } = useQuery(async () => {
-    const [content, users] = await Promise.all([listContent(), listUsers()]);
-    return {
-      queue: content.filter((c) => c.status === "in_review"),
-      approved: content.filter((c) => c.status === "approved"),
-      users,
-    };
+    // The two piles come back already separated. This used to read the whole
+    // library and filter here, which meant the page grew heavier with every
+    // item published even though the queue itself stays small.
+    const [piles, users] = await Promise.all([listReviewQueue(), listUsers()]);
+    return { ...piles, users };
   });
 
   if (error)
