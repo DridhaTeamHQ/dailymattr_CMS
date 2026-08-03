@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -20,7 +20,7 @@ import { fmt } from "@/components/StatsStrip";
 import { can, useAuth } from "@/lib/auth";
 import { useQuery } from "@/lib/useQuery";
 import { timeAgo } from "@/lib/store";
-import { KIND_LABEL, loadAnalytics } from "@/lib/analytics";
+import { KIND_LABEL, loadAnalyticsRow } from "@/lib/analytics";
 import { deleteComment, listCommentsFor, readerName } from "@/lib/db";
 import { useToast } from "@/lib/toast";
 import type { ContentComment, StatsSource } from "@/lib/types";
@@ -44,23 +44,29 @@ export default function AnalyticsDetailPage() {
   const { user } = useAuth();
   const params = useParams<{ source: string; id: string }>();
 
-  const { data, error } = useQuery(() => loadAnalytics());
+  /* Checked rather than cast: the segment is whatever is in the URL, and
+     `/analytics/anything/…` would otherwise be handed to a function whose type
+     promises it is one of two values. An unknown source has no numbers. */
+  const source: StatsSource | null =
+    params.source === "cms" || params.source === "pipeline"
+      ? params.source
+      : null;
 
-  /* Its own query rather than part of loadAnalytics: the list page needs
-     counts for everything and would otherwise fetch every thread in the
-     library to render numbers it already has. */
-  const { data: comments, refetch: refetchComments } = useQuery(
-    () =>
-      listCommentsFor(params.source as StatsSource, params.id).catch(() => []),
-    [params.source, params.id]
+  /* Wrapped, because `useQuery` reads a null `data` as "still loading" — and
+     "this story has no numbers" is an answer, not a pending state. */
+  const { data, error } = useQuery(
+    async () => ({
+      row: source ? await loadAnalyticsRow(source, params.id) : null,
+    }),
+    [source, params.id]
   );
 
-  const row = useMemo(
-    () =>
-      (data ?? []).find(
-        (r) => r.source === params.source && r.id === params.id
-      ),
-    [data, params.source, params.id]
+  /* Its own query rather than part of the row: a thread is the one thing on
+     this page that can be long, and it should not hold up the numbers. */
+  const { data: comments, refetch: refetchComments } = useQuery(
+    async () =>
+      source ? await listCommentsFor(source, params.id).catch(() => []) : [],
+    [source, params.id]
   );
 
   if (!user || !can.seeStats(user.role)) {
@@ -82,6 +88,8 @@ export default function AnalyticsDetailPage() {
   if (!data) {
     return <div className="mt-6 h-64 animate-pulse rounded-2xl bg-canvas" />;
   }
+
+  const row = data.row;
 
   if (!row) {
     return (

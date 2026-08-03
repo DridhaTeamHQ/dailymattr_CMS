@@ -24,7 +24,8 @@ import { PAGE_SIZES, clampPage, pageCount, pageSlice } from "@/lib/paginate";
 import { usePageParam } from "@/lib/usePageParam";
 import {
   approveArticle,
-  listContentByKind,
+  countContentByKind,
+  listContentPage,
   listContentStats,
   listNewsStudio,
   listNotified,
@@ -93,11 +94,7 @@ function ArticlesTabs() {
     /* Stats are the desk's, not the writer's — see `can.seeStats`. Asked for
        only when they will be shown, so a writer's page doesn't spend a round
        trip fetching numbers RLS would hand back as zeros anyway. */
-    const [selections, written, users] = await Promise.all([
-      listSelections(),
-      listContentByKind("article"),
-      listUsers(),
-    ]);
+    const [selections, users] = await Promise.all([listSelections(), listUsers()]);
 
     /* After the lists, because comment counts are asked for by id and live in
        whichever project owns the story — DB A for the feed, here for ours. */
@@ -106,15 +103,50 @@ function ArticlesTabs() {
     const [feedArticles, stats] = await Promise.all([
       listNewsStudioByIds(selections.map((s) => s.articleId)),
       user && can.seeStats(user.role)
-        ? listContentStats(
-            selections.map((s) => s.articleId),
-            written.filter((c) => c.status === "published").map((c) => c.id)
-          )
+        ? listContentStats(selections.map((s) => s.articleId), [])
         : new Map<string, ContentStats>(),
     ]);
 
-    return { selections, written, users, feedArticles, stats, notified, audience };
+    return { selections, users, feedArticles, stats, notified, audience };
   });
+
+  /* The desk's own articles, one page of them, filtered and counted by the
+     database — the same shape as the NewsStudio grid above.
+
+     This tab used to read every article the Studio has ever written, whole:
+     the `body` of each one and any cover stored inline as a data URI, all of
+     it to render eight rows and a tab count. The cost grew with the archive
+     while what was on screen never changed size.
+
+     Searched there too, for the reason given on `listContentPage`: the browser
+     now holds one page, so filtering here would search the page rather than
+     the library.
+
+     No refetch handle: nothing on this page writes to a Studio article. They
+     are written and published in the editor, which this list only links to. */
+  const {
+    data: mine,
+    error: mineError,
+    loading: mineLoading,
+  } = useQuery(async () => {
+    const [slice, counts] = await Promise.all([
+      listContentPage("article", { page, size: rowSize, search: term }),
+      /* Deliberately unsearched: the tab counts the library, not the result. */
+      countContentByKind("article"),
+    ]);
+
+    /* Only the rows on screen, and only for the roles that see numbers — a
+       page's worth rather than the archive's. */
+    const stats =
+      user && can.seeStats(user.role)
+        ? await listContentStats(
+            [],
+            slice.rows.filter((c) => c.status === "published").map((c) => c.id)
+          )
+        : new Map<string, ContentStats>();
+
+    return { rows: slice.rows, total: slice.total, all: counts.all, stats };
+  }, [page, term, rowSize]);
 
   /* One page of the grid. Re-runs on page or search change only; useQuery
      keeps the previous page on screen while the next one loads, so paging
@@ -122,27 +154,43 @@ function ArticlesTabs() {
   const {
     data: news,
     error: newsError,
+    loading: newsLoading,
     refetch: refetchNews,
   } = useQuery(
     () => listNewsStudio({ page, size: newsSize, search: term }),
     [page, term, newsSize]
   );
 
-  const newsCount = news ? pageCount(news.total, newsSize) : 1;
-  // A hand-typed ?page=900 on a list that has 240 pages: land on the last one
-  // rather than showing an empty grid.
-  useEffect(() => {
-    if (news && page > newsCount) setPage(newsCount);
-  }, [news, page, newsCount, setPage]);
+  /* A hand-typed ?page=900, or a bookmark to a page that has since been
+     approved away: land on the last real page rather than an empty list.
 
-  const failure = error ?? newsError;
+     Which page is the last one depends on the tab, because all three share one
+     ?page — the wire grid runs to hundreds of pages while the desk's own
+     drafts run to two, so the same number is in range on one tab and past the
+     end on another. Clamping against the grid alone is how ?page=90 reached
+     the database on the drafts tab.
+
+     The feed is absent on purpose: it pages in the browser, and `clampPage`
+     already keeps its render in range without a round trip. */
+  const pageLimit =
+    tab === "newsstudio"
+      ? news && pageCount(news.total, newsSize)
+      : tab === "cms"
+        ? mine && pageCount(mine.total, rowSize)
+        : null;
+
+  useEffect(() => {
+    if (pageLimit && page > pageLimit) setPage(pageLimit);
+  }, [page, pageLimit, setPage]);
+
+  const failure = error ?? newsError ?? mineError;
   if (failure)
     return (
       <div className="card p-8 text-sm text-rose">
         Couldn&apos;t load articles: {failure}
       </div>
     );
-  if (!user || !data || !news) return <ArticlesSkeleton />;
+  if (!user || !data || !news || !mine) return <ArticlesSkeleton />;
   const approver = can.approveArticles(user.role);
   // Approving changes the selections *and* the ring on the grid card, so both
   // queries have to hear about it.
@@ -302,7 +350,6 @@ This cannot be undone or recalled.`,
 
   // ── derived ─────────────────────────────────────────────────────
   const selections = data.selections;
-  const written = data.written;
   const showStats = can.seeStats(user.role);
 
   const articleOf = (id: string) =>
@@ -323,17 +370,27 @@ This cannot be undone or recalled.`,
     const art = articleOf(sel.articleId);
     return hit(sel.titleOverride, art?.title, art?.category, art?.source);
   });
-  const writtenFiltered = written.filter((c) => hit(c.title, c.summary));
+  /* A list is only empty once it has settled.
+   *
+   * Two things put zero rows on screen while the truth is still arriving: the
+   * page number being walked back by the effect above, and a refetch in
+   * flight — useQuery deliberately keeps the previous answer visible so paging
+   * doesn't blink, which means the rows in hand can belong to a page we are no
+   * longer on. Rendering "No articles written yet" over either states
+   * something false, and is followed a moment later by a full list. */
+  const clamping = pageLimit !== null && page > pageLimit;
+  const newsSettling = clamping || newsLoading;
+  const mineSettling = clamping || mineLoading;
 
-  // The grid arrives already paged and searched; the feed and the drafts are
-  // small enough to page in the browser. Approving can empty the last page of
-  // those two, so clamp before slicing.
+  // The grid and the drafts arrive already paged and searched; the feed is a
+  // small table this page already holds in full, so it pages in the browser.
+  // Approving can empty its last page, so clamp before slicing.
   const newsRows = news.rows;
   const newsPage = clampPage(page, news.total, newsSize);
   const feedPage = clampPage(page, feedOrdered.length, rowSize);
-  const writtenPage = clampPage(page, writtenFiltered.length, rowSize);
+  const writtenPage = clampPage(page, mine.total, rowSize);
   const feedRows = pageSlice(feedOrdered, page, rowSize);
-  const writtenRows = pageSlice(writtenFiltered, page, rowSize);
+  const writtenRows = mine.rows;
 
   const selOf = (id: string) => selections.find((s) => s.articleId === id);
   const nameOf = (id: string) =>
@@ -344,10 +401,10 @@ This cannot be undone or recalled.`,
     data.feedArticles.find((n) => n.id === previewId) ??
     null;
 
-  // The NewsStudio count is the server's, not the length of the page on screen.
+  // Both counts are the server's, not the length of the page on screen.
   const TABS: [Tab, string, number | undefined][] = [
     ["newsstudio", "NewsStudio", news.total],
-    ["cms", "Written in Studio", written.length],
+    ["cms", "Written in Studio", mine.all],
     ["feed", "App feed", selections.length],
   ];
 
@@ -445,6 +502,8 @@ This cannot be undone or recalled.`,
       {tab === "newsstudio" && (
         <>
           {newsRows.length === 0 ? (
+            // Held back until the grid has settled — see `newsSettling`.
+            newsSettling ? null : (
             <div className="card flex flex-col items-center gap-2 p-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
                 <Search size={20} />
@@ -458,6 +517,7 @@ This cannot be undone or recalled.`,
                   : "Approved pipeline stories will appear here."}
               </p>
             </div>
+            )
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {newsRows.map((n, i) => {
@@ -785,7 +845,9 @@ This cannot be undone or recalled.`,
       {tab === "cms" && (
         <>
           <div className="space-y-3">
-            {writtenFiltered.length === 0 ? (
+            {writtenRows.length === 0 ? (
+              // Held back until the list has settled — see `mineSettling`.
+              mineSettling ? null : (
               <div className="card flex flex-col items-center gap-2 p-14 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tint text-accent">
                   <Plus size={20} />
@@ -807,6 +869,7 @@ This cannot be undone or recalled.`,
                   </Link>
                 )}
               </div>
+              )
             ) : (
               writtenRows.map((c, i) => (
                 <motion.div
@@ -844,7 +907,7 @@ This cannot be undone or recalled.`,
                           indifference rather than as "not out yet". */}
                       {showStats && c.status === "published" && (
                         <StatsStrip
-                          stats={data.stats.get(statKey("cms", c.id))}
+                          stats={mine.stats.get(statKey("cms", c.id))}
                           className="mt-1.5"
                         />
                       )}
@@ -858,7 +921,7 @@ This cannot be undone or recalled.`,
 
           <Pager
             page={writtenPage}
-            total={writtenFiltered.length}
+            total={mine.total}
             size={rowSize}
             onPage={setPage}
             label="articles"

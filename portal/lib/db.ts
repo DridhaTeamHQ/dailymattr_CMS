@@ -146,6 +146,17 @@ const fail = (what: string, error: { message: string } | null) => {
 };
 
 /**
+ * True for the one PostgREST error that means "you asked past the end".
+ *
+ * Matched on the code first — PGRST103 is what the server calls it — and on
+ * the wording as a fallback, because the code is absent from some error
+ * shapes the client synthesises. Deliberately narrow: every other error from
+ * a paged query is still a real failure and must keep reaching the caller.
+ */
+const isRangeMiss = (error: { message: string; code?: string }) =>
+  error.code === "PGRST103" || /range not satisfiable/i.test(error.message);
+
+/**
  * The ceiling PostgREST applies whether we ask for one or not.
  *
  * A select with no limit is not unlimited — the server caps the response and
@@ -158,6 +169,27 @@ const fail = (what: string, error: { message: string } | null) => {
  * probably short of the truth.
  */
 const ROW_CAP = 1000;
+
+/**
+ * Splits a list of ids into requests small enough to survive a URL.
+ *
+ * The chunking is not optional — these ids travel in the query string and a
+ * few hundred uuids is a URL PostgREST refuses. Running the chunks in turn
+ * was, though: every one of these loops asked for a slice, waited for it, and
+ * only then asked for the next, so a thousand ids meant seven round trips
+ * stacked end to end before anything could render. Nothing in a later chunk
+ * depends on an earlier one, so they go together and the wait is one round
+ * trip rather than seven.
+ *
+ * Bounded by construction: the number of requests is the id count over the
+ * chunk size, and the callers' lists are page-sized or library-sized, not
+ * unbounded.
+ */
+const inChunks = <T,>(items: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+};
 
 /** Warns once a list comes back at exactly the cap, which means it likely hit it. */
 const capped = (what: string, rows: unknown[]) => {
@@ -366,6 +398,58 @@ export async function listPublishedLite(): Promise<PublishedLite[]> {
   }));
 }
 
+/** A content row as a tally or a trend line needs it: no body, no cover. */
+export type ContentLite = {
+  id: string;
+  kind: ContentKind;
+  status: ContentStatus;
+  publishedAt: string | null;
+  createdAt: string;
+};
+
+/**
+ * Every content item, counted rather than read.
+ *
+ * The dashboard asked for `select *` across the whole library to produce four
+ * numbers and a bar chart. That is the row's `body` — the entire article — and
+ * its `cover_url`, fifteen of which are base64 data URIs totalling 4 MB with
+ * one at 1.9 MB on its own, downloaded on every visit to the first screen
+ * anyone sees after signing in. None of it was rendered.
+ *
+ * Five columns instead. A thousand rows of this is tens of kilobytes, and the
+ * page that needs a cover — the library grid — still asks for its own.
+ *
+ * Ranged rather than limited, for the reason given on `listPublishedLite`: a
+ * plain limit stops at PostgREST's ceiling and says nothing, so the tallies
+ * would quietly stop counting past a thousand items.
+ */
+export async function listContentLite(): Promise<ContentLite[]> {
+  const rows: Row[] = [];
+  const CHUNK = 1000;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("content_items")
+      .select("id,kind,status,published_at,created_at")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(rows.length, rows.length + CHUNK - 1);
+    fail("listContentLite", error);
+
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < CHUNK) break;
+  }
+
+  return rows.map((r) => ({
+    id: r.id as string,
+    kind: r.kind as ContentKind,
+    status: r.status as ContentStatus,
+    publishedAt: (r.published_at as string | null) ?? null,
+    createdAt: r.created_at as string,
+  }));
+}
+
 /**
  * Covers for specific items, so a list can pay for the ones it shows.
  *
@@ -379,13 +463,19 @@ export async function listContentCovers(
   if (ids.length === 0) return out;
   const CHUNK = 50;
 
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from("content_items")
-      .select("id,cover_url")
-      .in("id", ids.slice(i, i + CHUNK));
-    fail("listContentCovers", error);
-    for (const r of (data ?? []) as Row[]) {
+  const batches = await Promise.all(
+    inChunks(ids, CHUNK).map(async (slice) => {
+      const { data, error } = await supabase
+        .from("content_items")
+        .select("id,cover_url")
+        .in("id", slice);
+      fail("listContentCovers", error);
+      return (data ?? []) as Row[];
+    })
+  );
+
+  for (const rows of batches) {
+    for (const r of rows) {
       out.set(r.id as string, (r.cover_url as string | null) ?? null);
     }
   }
@@ -478,29 +568,56 @@ export async function listContentPage(
     search?: string;
   } = {}
 ): Promise<ContentPage> {
-  let q = supabase
-    .from("content_items")
-    .select("*", { count: "exact" })
-    .eq("kind", kind);
-  if (bucket !== "all") q = q.eq("status", bucket);
+  /* Built twice from one description: once for the rows, and once as a bare
+     count if the range turns out to be past the end. The filters have to be
+     identical between the two or the total would describe a different list
+     than the one being paged. */
+  const build = (head = false) => {
+    let q = supabase
+      .from("content_items")
+      // Constant column list — with `head` set no row is transferred.
+      .select("*", { count: "exact", head })
+      .eq("kind", kind);
+    if (bucket !== "all") q = q.eq("status", bucket);
 
-  /* Searched in the database, like the NewsStudio grid, because the browser
-     only ever holds one page — filtering here would search the page rather
-     than the library, which is the opposite of what a search is for.
+    /* Searched in the database, like the NewsStudio grid, because the browser
+       only ever holds one page — filtering here would search the page rather
+       than the library, which is the opposite of what a search is for.
 
-     Title and summary only: `tags` is an array column and ilike cannot reach
-     into it, so a tag search would need a different operator and silently
-     match nothing in the meantime. */
-  const term = searchTerm(search);
-  if (term) {
-    q = q.or(["title", "summary"].map((c) => `${c}.ilike.*${term}*`).join(","));
-  }
+       Title and summary only: `tags` is an array column and ilike cannot reach
+       into it, so a tag search would need a different operator and silently
+       match nothing in the meantime. */
+    const term = searchTerm(search);
+    if (term) {
+      q = q.or(["title", "summary"].map((c) => `${c}.ilike.*${term}*`).join(","));
+    }
+    return q;
+  };
 
   const from = (Math.max(1, page) - 1) * size;
-  const { data, error, count } = await q
+  const { data, error, count } = await build()
     .order("updated_at", { ascending: false })
     .order("id", { ascending: false })
     .range(from, from + size - 1);
+
+  /* A page past the end of the list is an empty page, not a failure.
+   *
+   * PostgREST answers a range whose first row is beyond the last one with 416
+   * "Requested range not satisfiable" rather than an empty array. That reached
+   * `fail()`, which throws, so every caller's error branch took over the whole
+   * screen: a hand-typed `?page=90`, a bookmark to a page of a list that has
+   * since shrunk, or the last item on the last page being approved away, and
+   * the library was replaced by "Couldn't load articles".
+   *
+   * The callers all clamp a too-large page back to the last real one — but
+   * that clamp reads `total`, and a throw means there is no total to read, so
+   * the one piece of information needed to recover never arrived. Answering
+   * with an empty page and the true count is what lets it do its job. */
+  if (error && isRangeMiss(error)) {
+    const { error: countError, count: total } = await build(true);
+    fail("listContentPage", countError);
+    return { rows: [], total: total ?? 0 };
+  }
   fail("listContentPage", error);
 
   return { rows: (data ?? []).map(toContent), total: count ?? 0 };
@@ -755,6 +872,31 @@ export async function listSelections(): Promise<ArticleSelection[]> {
   return rows.slice().reverse().map(toSelection);
 }
 
+/**
+ * Whether one wire story is in the feed, and when it got there.
+ *
+ * For a screen about a single story, which would otherwise read every
+ * selection ever made to learn one date. Deliberately not shaped as an
+ * `ArticleSelection`: `position` is derived from a row's place in the whole
+ * ordered list, so a single row cannot honestly carry one, and returning a
+ * made-up 1 would be worse than not offering the field.
+ *
+ * Null means the story was never approved, or has since been taken out — which
+ * is the caller's cue that it has no feed numbers rather than an error.
+ */
+export async function getSelectionApproval(
+  articleId: string
+): Promise<{ approvedAt: string } | null> {
+  if (!UUID_RE.test(articleId)) return null;
+  const { data, error } = await supabase
+    .from("article_selections")
+    .select("approved_at")
+    .eq("article_id", articleId)
+    .maybeSingle();
+  fail("getSelectionApproval", error);
+  return data ? { approvedAt: data.approved_at as string } : null;
+}
+
 export async function approveArticle(
   articleId: string,
   actor: CmsUser,
@@ -842,21 +984,30 @@ export async function listContentStats(
   const BATCH = 150;
 
   try {
-    const rows: Row[] = [];
-    for (let i = 0; i < wanted.length; i += BATCH) {
-      const { data, error } = await supabase
-        .from("content_stats")
-        .select("*")
-        .in("content_id", wanted.slice(i, i + BATCH));
-      if (error) {
-        // 42P01 is "relation does not exist" — the migration is not applied.
-        if (!/does not exist|permission denied/i.test(error.message)) {
-          console.warn("[stats]", error.message);
-        }
-        return out;
+    const batches = await Promise.all(
+      inChunks(wanted, BATCH).map(async (slice) => {
+        const { data, error } = await supabase
+          .from("content_stats")
+          .select("*")
+          .in("content_id", slice);
+        return { rows: (data ?? []) as Row[], error };
+      })
+    );
+
+    /* One refusal speaks for all of them — the table is missing or the role
+       cannot read it, which is true of every batch, not just this one. Kept as
+       an early return rather than a partial answer for the same reason it was
+       before: half a set of numbers reads as a real result. */
+    const refused = batches.find((b) => b.error)?.error;
+    if (refused) {
+      // 42P01 is "relation does not exist" — the migration is not applied.
+      if (!/does not exist|permission denied/i.test(refused.message)) {
+        console.warn("[stats]", refused.message);
       }
-      rows.push(...((data ?? []) as Row[]));
+      return out;
     }
+
+    const rows = batches.flatMap((b) => b.rows);
 
     for (const r of rows) {
       const source = (r.source as StatsSource) ?? "cms";
@@ -1079,20 +1230,26 @@ export async function listCmsCommentCounts(
 
   const CHUNK = 200;
   try {
-    for (let i = 0; i < valid.length; i += CHUNK) {
-      const { data, error } = await supabase.rpc("app_content_comment_counts", {
-        p_ids: valid.slice(i, i + CHUNK),
-      });
-      if (error) {
-        // Absent until migration 13 is applied; the rest still renders.
-        if (!/does not exist/i.test(error.message)) {
-          console.warn("[comments/cms]", error.message);
-        }
-        return out;
+    const batches = await Promise.all(
+      inChunks(valid, CHUNK).map(async (slice) => {
+        const { data, error } = await supabase.rpc("app_content_comment_counts", {
+          p_ids: slice,
+        });
+        return { rows: (data ?? []) as { content_id: string; n: number }[], error };
+      })
+    );
+
+    const refused = batches.find((b) => b.error)?.error;
+    if (refused) {
+      // Absent until migration 13 is applied; the rest still renders.
+      if (!/does not exist/i.test(refused.message)) {
+        console.warn("[comments/cms]", refused.message);
       }
-      for (const r of (data ?? []) as { content_id: string; n: number }[]) {
-        out.set(r.content_id, Number(r.n ?? 0));
-      }
+      return out;
+    }
+
+    for (const b of batches) {
+      for (const r of b.rows) out.set(r.content_id, Number(r.n ?? 0));
     }
   } catch (e) {
     console.warn("[comments/cms] unreachable:", e instanceof Error ? e.message : e);
@@ -1109,17 +1266,23 @@ export async function listCommentCounts(
 
   const CHUNK = 200;
   try {
-    for (let i = 0; i < valid.length; i += CHUNK) {
-      const { data, error } = await newsstudio.rpc("app_comment_counts", {
-        p_ids: valid.slice(i, i + CHUNK),
-      });
-      if (error) {
-        console.warn("[comments]", error.message);
-        return out;
-      }
-      for (const r of (data ?? []) as { article_id: string; n: number }[]) {
-        out.set(r.article_id, Number(r.n ?? 0));
-      }
+    const batches = await Promise.all(
+      inChunks(valid, CHUNK).map(async (slice) => {
+        const { data, error } = await newsstudio!.rpc("app_comment_counts", {
+          p_ids: slice,
+        });
+        return { rows: (data ?? []) as { article_id: string; n: number }[], error };
+      })
+    );
+
+    const refused = batches.find((b) => b.error)?.error;
+    if (refused) {
+      console.warn("[comments]", refused.message);
+      return out;
+    }
+
+    for (const b of batches) {
+      for (const r of b.rows) out.set(r.article_id, Number(r.n ?? 0));
     }
   } catch (e) {
     console.warn("[comments] unreachable:", e instanceof Error ? e.message : e);
@@ -1312,75 +1475,86 @@ export async function listNewsStudio({
 }: { page?: number; size?: number; search?: string } = {}): Promise<NewsStudioPage> {
   if (!newsstudio) return { rows: [], total: 0 };
 
-  let q = newsstudio
-    .from("articles")
-    .select(NEWS_COLUMNS, { count: "exact" })
-    .in("status", ["approved", "sent"]);
+  const build = (head = false) => {
+    let q = newsstudio!
+      .from("articles")
+      // The column list is constant: with `head` set no row is transferred,
+      // so it costs nothing there and varying it defeats the type inference.
+      .select(NEWS_COLUMNS, { count: "exact", head })
+      .in("status", ["approved", "sent"]);
 
-  // Matches the fields the card shows, so a hit is always visible on screen.
-  const term = searchTerm(search);
-  if (term) {
-    q = q.or(
-      ["title", "edited_title", "category", "topic", "section", "source"]
-        .map((c) => `${c}.ilike.*${term}*`)
-        .join(",")
-    );
-  }
+    // Matches the fields the card shows, so a hit is always visible on screen.
+    const term = searchTerm(search);
+    if (term) {
+      q = q.or(
+        ["title", "edited_title", "category", "topic", "section", "source"]
+          .map((c) => `${c}.ilike.*${term}*`)
+          .join(",")
+      );
+    }
+    return q;
+  };
 
   const from = (Math.max(1, page) - 1) * size;
-  const { data, error, count } = await q
+  const { data, error, count } = await build()
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .range(from, from + size - 1);
+
+  // A page past the end is an empty page — see the note on listContentPage.
+  if (error && isRangeMiss(error)) {
+    const { error: countError, count: total } = await build(true);
+    fail("listNewsStudio", countError);
+    return { rows: [], total: total ?? 0 };
+  }
   fail("listNewsStudio", error);
 
   return { rows: (data ?? []).map(toNewsStudio), total: count ?? 0 };
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Specific pipeline articles by id, for the app feed.
  *
  * A selection in DB B stores only the article id, so the feed needs the
  * articles themselves — and they are almost never on the page of the grid
- * currently being browsed. Chunked because a URL carrying a few hundred ids
- * is one PostgREST will refuse.
+ * currently being browsed.
+ *
+ * There were two of these, and each knew one of the two things that make the
+ * call safe. This one chunked, because the ids travel in the query string and
+ * a URL carrying a few hundred uuids is one PostgREST refuses — but it asked
+ * for whatever it was handed. The other filtered the ids to ones Postgres can
+ * parse, because `article_selections` outlives the pipeline rows it points at
+ * and older rows hold ids that are not uuids at all — but it sent them in a
+ * single request. So the two callers with the longest lists, the dashboard and
+ * analytics, were the two using the unchunked one: both pass every selection
+ * ever approved, and both would have started failing outright, not slowly,
+ * once the feed passed a few hundred stories. `fail()` throws, so that is an
+ * error card where the page was.
+ *
+ * One function that does both. Deduplicated on the way in for the same reason
+ * the comment-count helpers do it: an id asked for twice costs a slot in the
+ * URL and answers with the row already in hand.
  */
 export async function listNewsStudioByIds(
   ids: string[]
 ): Promise<NewsStudioArticle[]> {
-  if (!newsstudio || ids.length === 0) return [];
-  const CHUNK = 100;
-  const out: NewsStudioArticle[] = [];
-
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await newsstudio
-      .from("articles")
-      .select(NEWS_COLUMNS)
-      .in("id", ids.slice(i, i + CHUNK));
-    fail("listNewsStudioByIds", error);
-    out.push(...(data ?? []).map(toNewsStudio));
-  }
-
-  return out;
-}
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export async function getNewsStudioByIds(
-  ids: string[]
-): Promise<NewsStudioArticle[]> {
-  // article_selections can outlive the pipeline row it points at, and older
-  // rows may hold non-uuid ids. Postgres errors on a malformed uuid, which
-  // would take down the whole page — so only ask for ids it can parse.
-  const valid = ids.filter((id) => UUID_RE.test(id));
+  const valid = [...new Set(ids)].filter((id) => UUID_RE.test(id));
   if (!newsstudio || valid.length === 0) return [];
-  const { data, error } = await newsstudio
-    .from("articles")
-    .select(
-      "id,title,edited_title,summary,edited_summary,category,topic,section,source,image_url,fact_score,fact_label,fact_notes,status,sent_at,created_at,scraped_at,versions"
-    )
-    .in("id", valid);
-  fail("getNewsStudioByIds", error);
-  return (data ?? []).map(toNewsStudio);
+  const CHUNK = 100;
+
+  const batches = await Promise.all(
+    inChunks(valid, CHUNK).map(async (slice) => {
+      const { data, error } = await newsstudio!
+        .from("articles")
+        .select(NEWS_COLUMNS)
+        .in("id", slice);
+      fail("listNewsStudioByIds", error);
+      return (data ?? []).map(toNewsStudio);
+    })
+  );
+
+  return batches.flat();
 }

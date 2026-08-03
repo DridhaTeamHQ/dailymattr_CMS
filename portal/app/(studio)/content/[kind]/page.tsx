@@ -124,7 +124,7 @@ function KindList() {
    * the three tab counts all resolve there, so the browser holds a page
    * rather than a library however large the table gets.
    */
-  const { data, error, refetch } = useQuery(async () => {
+  const { data, error, refetch, loading } = useQuery(async () => {
     if (!kind) return null;
     const users = await listUsers();
 
@@ -178,6 +178,16 @@ function KindList() {
   useEffect(() => {
     if (data && page > lastPage) setPage(lastPage);
   }, [data, page, lastPage, setPage]);
+
+  /* A list is only empty once it has settled.
+   *
+   * Two things put zero rows on screen while the truth is still arriving: the
+   * page number being walked back by the effect above, and a refetch in
+   * flight — useQuery deliberately keeps the previous answer visible so paging
+   * doesn't blink, which means the rows in hand can belong to a page we are no
+   * longer on. Announcing "Nothing live yet" over either states something
+   * false, and is followed a moment later by a full grid. */
+  const settling = loading || (!!data && page > lastPage);
 
   if (error)
     return (
@@ -507,6 +517,8 @@ This cannot be undone or recalled.`,
         </div>
       ) : cardGrid ? (
         rows.length === 0 ? (
+          // Held back until the list has settled — see `settling`.
+          settling ? null : (
           <div className="card flex flex-col items-center gap-2 p-14 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint-tint text-mint">
               <Check size={20} />
@@ -526,6 +538,7 @@ This cannot be undone or recalled.`,
                 : `Approved ${meta.label} appear here once the chief editor publishes them.`}
             </p>
           </div>
+          )
         ) : (
           <>
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
