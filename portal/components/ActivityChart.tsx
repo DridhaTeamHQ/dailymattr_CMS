@@ -1,8 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ContentItem, ContentKind } from "@/lib/types";
+import type { ContentKind } from "@/lib/types";
 import { KIND_META } from "@/lib/types";
+
+/* Only the three fields a bar is made of.
+ *
+ * Narrower than ContentItem on purpose: this chart plots when something was
+ * made and what kind it was, so asking for a whole item would let a caller
+ * fetch an article's body to draw a 3-pixel rectangle — which is exactly what
+ * the dashboard used to do. A ContentItem still satisfies it. */
+export type Plotted = {
+  kind: ContentKind;
+  publishedAt: string | null;
+  createdAt: string;
+};
 
 /**
  * What the newsroom actually shipped, day by day.
@@ -39,7 +51,7 @@ const startOfDay = (d: Date) => {
   return c;
 };
 
-export default function ActivityChart({ items }: { items: ContentItem[] }) {
+export default function ActivityChart({ items }: { items: Plotted[] }) {
   const [rangeIdx, setRangeIdx] = useState(0);
   const [hidden, setHidden] = useState<Set<ContentKind>>(new Set());
   const [hover, setHover] = useState<number | null>(null);

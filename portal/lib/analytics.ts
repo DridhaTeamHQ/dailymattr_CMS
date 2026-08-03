@@ -1,6 +1,8 @@
 import {
   EMPTY_STATS,
-  getNewsStudioByIds,
+  getContentItem,
+  getSelectionApproval,
+  listNewsStudioByIds,
   listContentStats,
   listPublishedLite,
   listSelections,
@@ -100,7 +102,7 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
   const feedIds = selections.map((s) => s.articleId);
   const liveCmsIds = content.map((c) => c.id);
   const [feedArticles, stats] = await Promise.all([
-    getNewsStudioByIds(feedIds),
+    listNewsStudioByIds(feedIds),
     listContentStats(feedIds, liveCmsIds),
   ]);
   const bySelection = new Map(selections.map((s) => [s.articleId, s]));
@@ -148,6 +150,82 @@ export async function loadAnalytics(): Promise<AnalyticsRow[]> {
 
   rows.sort((x, y) => y.liveAtMs - x.liveAtMs);
   return rows;
+}
+
+/**
+ * One story's row, fetched as one story.
+ *
+ * The detail screen used to call `loadAnalytics()` and then `.find()` the row
+ * it wanted — so opening a single story paid for the entire cross-database
+ * join: every published item, every selection, every stat and every comment
+ * count in the Studio, to render six numbers about one of them. The cost of
+ * clicking a row grew with the size of the library, which is the wrong way
+ * round for a screen that gets narrower the deeper you go.
+ *
+ * Three small queries instead, and they answer together.
+ *
+ * Null means the story has no numbers to show, which is a real answer and not
+ * a failure: a CMS item that is no longer published, or a wire story that was
+ * never approved into the feed or has since been removed. The list holds
+ * exactly the same two rules — it is built from published content and from
+ * current selections — so a story missing here is a story missing there.
+ */
+export async function loadAnalyticsRow(
+  source: StatsSource,
+  id: string
+): Promise<AnalyticsRow | null> {
+  const key = statKey(source, id);
+
+  if (source === "cms") {
+    const [item, stats] = await Promise.all([
+      getContentItem(id),
+      listContentStats([], [id]),
+    ]);
+    if (!item || item.status !== "published") return null;
+
+    const s = stats.get(key) ?? EMPTY_STATS;
+    const liveAt = item.publishedAt ?? item.updatedAt;
+    return {
+      key,
+      source: "cms",
+      id,
+      kind: item.kind,
+      title: item.title,
+      /* Unlike the list, which leaves this null and fetches covers for the
+         rows on screen, one row can simply carry its own. */
+      coverUrl: item.coverUrl,
+      meta: item.categorySlug ?? "Uncategorised",
+      liveAt,
+      liveAtMs: msOf(liveAt),
+      stats: s,
+      actions: actionsOf(s),
+    };
+  }
+
+  const [articles, approval, stats] = await Promise.all([
+    listNewsStudioByIds([id]),
+    getSelectionApproval(id),
+    listContentStats([id], []),
+  ]);
+  const article = articles[0];
+  if (!article || !approval) return null;
+
+  const s = stats.get(key) ?? EMPTY_STATS;
+  // Approval is when it reached the app — the same choice the list makes.
+  const liveAt = approval.approvedAt ?? article.publishedAt;
+  return {
+    key,
+    source: "pipeline",
+    id,
+    kind: "feed",
+    title: article.title,
+    coverUrl: article.imageUrl || null,
+    meta: article.source,
+    liveAt,
+    liveAtMs: msOf(liveAt),
+    stats: s,
+    actions: actionsOf(s),
+  };
 }
 
 /* The metrics that are literally columns on a stats row. Separate from

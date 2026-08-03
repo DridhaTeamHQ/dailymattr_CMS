@@ -14,9 +14,9 @@ import FormatChart from "@/components/FormatChart";
 import { Avatar, FactBadge, Pill, SectionHeader } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import {
-  getNewsStudioByIds,
+  listNewsStudioByIds,
   listAudit,
-  listContent,
+  listContentLite,
   listContentStats,
   listSelections,
   statKey,
@@ -34,13 +34,15 @@ export default function DashboardPage() {
   const { data, error } = useQuery(async () => {
     // All four queries fire in parallel — no waiting for selections before
     // fetching newsstudio. The join happens client-side after everything lands.
+    /* The tallies and the trend chart, not the library. Everything below
+       reads a status, a kind or a date — see `listContentLite`. */
     const [content, audit, selectionsAndNews] = await Promise.all([
-      listContent(),
+      listContentLite(),
       listAudit(40),
       // Selections + their NewsStudio articles: selections is fast (tiny table)
       // so chain it only with the newsstudio fetch, not with content/audit.
       listSelections().then(async (selections) => {
-        const newsstudio = await getNewsStudioByIds(
+        const newsstudio = await listNewsStudioByIds(
           selections.map((s) => s.articleId)
         );
         return { selections, newsstudio };
