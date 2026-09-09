@@ -115,7 +115,6 @@ export const WINDOW_DAYS = 14;
 export interface DayPoint {
   date: string;
   dau: number;
-  guests: number;
   sessions: number;
   cardsSwiped: number;
   rightSwipes: number;
@@ -139,9 +138,6 @@ export const DAYS: DayPoint[] = Array.from({ length: 30 }, (_, k) => {
   return {
     date,
     dau,
-    // Guests are phones that never signed in — a minority, and shown apart
-    // because they cannot be followed from one day to the next.
-    guests: Math.round(dau * frac(0.06, 0.11)),
     sessions,
     cardsSwiped,
     rightSwipes: Math.round(cardsSwiped * frac(0.16, 0.24)),
@@ -203,7 +199,8 @@ export interface DauRow {
   week: string;
   section: TimeSection;
   registeredDau: number;
-  guestDevices: number;
+  /** Sessions opened in the window. An event, so unlike readers these add up. */
+  sessions: number;
   cardsSwiped: number;
   rightSwipes: number;
   cardsPerActive: number;
@@ -233,7 +230,7 @@ export const DAU_ROWS: DauRow[] = DAYS.slice(-WINDOW_DAYS).flatMap((d) =>
       week: weekOf(d.date),
       section,
       registeredDau,
-      guestDevices: Math.round(d.guests * w),
+      sessions: Math.round(d.sessions * w * (0.9 + rnd() * 0.2)),
       cardsSwiped,
       rightSwipes: Math.round(cardsSwiped * frac(0.16, 0.24)),
       cardsPerActive: registeredDau ? Math.round((cardsSwiped / registeredDau) * 100) / 100 : 0,
@@ -593,6 +590,213 @@ export const AUDIO = {
   background: dec(41, 62),
 };
 
+/* ──────────────────── engagement, by what it is ───────────────────── */
+
+/**
+ * The desk's own products, which are not the same list as the publishing
+ * types above. That list answers "what did we file", drawn from the workflow;
+ * this one answers "what did readers do with it", and readers meet a Pix or a
+ * Qix as a thing in its own right, not as an article with pictures.
+ */
+export type Product = "article" | "pix" | "qix" | "trax" | "buzz";
+
+export const PRODUCTS: Product[] = ["article", "pix", "qix", "trax", "buzz"];
+
+export const PRODUCT_LABEL: Record<Product, string> = {
+  article: "Articles",
+  pix: "Pix",
+  qix: "Qix",
+  trax: "Trax",
+  buzz: "Buzz",
+};
+
+/**
+ * How the card views split, and how hard each product is engaged with once
+ * opened. The two are deliberately independent: Trax takes the fewest views
+ * and Pix the most actions per view, which is the whole reason to show a rate
+ * beside a total. A product that only ever showed totals would rank by how
+ * much of it the desk files.
+ */
+const PRODUCT_MIX: Record<Product, { share: number; pull: number }> = {
+  article: { share: 0.4, pull: 0.85 },
+  buzz: { share: 0.29, pull: 1.0 },
+  // A picture is the cheapest thing in the app to like and the easiest to send on.
+  pix: { share: 0.17, pull: 1.55 },
+  // Answering is itself an interaction, so a Qix starts ahead.
+  qix: { share: 0.09, pull: 1.3 },
+  // Listening is long and quiet: few plays, and finishing one is the signal.
+  trax: { share: 0.05, pull: 0.7 },
+};
+
+export interface ProductEngagement {
+  product: Product;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  /** Actions per hundred views — the one number that compares products fairly. */
+  rate: number;
+}
+
+const TOTAL_VIEWS = INTERACTION_ROWS.reduce((a, r) => a + r.views, 0);
+
+export const PRODUCT_ENGAGEMENT: ProductEngagement[] = PRODUCTS.map((product) => {
+  const { share, pull } = PRODUCT_MIX[product];
+  const views = Math.round(TOTAL_VIEWS * share);
+  const likes = Math.round(views * frac(0.06, 0.11) * pull);
+  const comments = Math.round(views * frac(0.004, 0.011) * pull);
+  const shares = Math.round(views * frac(0.012, 0.028) * pull);
+  const saves = Math.round(views * frac(0.02, 0.04) * pull);
+  const actions = likes + comments + shares + saves;
+  return {
+    product,
+    views,
+    likes,
+    comments,
+    shares,
+    saves,
+    rate: views ? Math.round((actions / views) * 1000) / 10 : 0,
+  };
+});
+
+/**
+ * Headline and the desk it came off, per product.
+ *
+ * The category is written down rather than drawn: a random pairing filed the
+ * repo-rate story under Entertainment, and a table of sample rows nobody can
+ * read straight is worse than no table.
+ */
+const ITEM_TITLES: Record<Product, [title: string, category: string][]> = {
+  article: [
+    ["Cabinet clears the metro extension to Shamshabad", "Telangana"],
+    ["Monsoon session opens with the farm bill on the list", "Politics"],
+    ["RBI holds the repo rate for a fourth meeting", "Finance"],
+    ["Two states, one river, and a tribunal that has not met", "National"],
+    ["The quiet return of the small-cap IPO", "Business"],
+    ["Hyderabad's water table rose this year. Nobody agrees why", "Science"],
+    ["A verdict twelve years in the writing", "National"],
+    ["What the new labour codes change on the shop floor", "Business"],
+  ],
+  pix: [
+    ["Six frames from the Godavari in flood", "Andhra Pradesh"],
+    ["The city at 5am, before the horns", "Telangana"],
+    ["Charminar, from the roof opposite", "Telangana"],
+    ["Harvest, in nine pictures", "National"],
+    ["What ₹100 buys at Monda Market", "Business"],
+    ["The last single-screen theatres", "Entertainment"],
+    ["Winter in the Araku valley", "Andhra Pradesh"],
+    ["One street, four decades apart", "National"],
+  ],
+  qix: [
+    ["How closely did you read the budget?", "Finance"],
+    ["Name the river from one bend", "National"],
+    ["Which of these five headlines is invented?", "International"],
+    ["Test yourself on this week's verdicts", "Politics"],
+    ["The cricket quiz nobody finishes", "Sports"],
+    ["Spot the year from the photograph", "Entertainment"],
+    ["Twelve questions on the Constitution", "Politics"],
+    ["How well do you know your own city?", "Telangana"],
+  ],
+  buzz: [
+    ["The metro map you have been reading wrong", "Telangana"],
+    ["Why every biryani chain opened on the same road", "Business"],
+    ["A founder, a fund, and a very short year", "Business"],
+    ["The film everyone is quoting and nobody has seen", "Entertainment"],
+    ["Ten minutes that changed the second innings", "Sports"],
+    ["The pothole with its own postal address", "Telangana"],
+    ["What the auto drivers know about the traffic model", "Science"],
+    ["Nobody expected the third-day crowd", "Sports"],
+  ],
+  trax: [
+    ["People Pleaser", "Spiritual"],
+    ["How to Apologize", "Spiritual"],
+    ["Managing Expectations", "Business"],
+    ["Take Criticism", "Spiritual"],
+    ["Say No", "Spiritual"],
+    ["Setting Boundaries", "Spiritual"],
+    ["Auroras", "Science"],
+    ["Voyager", "Science"],
+  ],
+};
+
+export interface CategoryEngagement {
+  product: Product;
+  category: string;
+  views: number;
+  /** Likes, comments, shares and saves together. */
+  actions: number;
+  /** Actions per hundred views. */
+  rate: number;
+}
+
+/**
+ * Which category performs best, per product.
+ *
+ * Not every product covers every category — nobody files a Qix on Finance
+ * most weeks — so each takes a subset. An empty row and a weak row mean
+ * different things, and a grid padded with zeros would hide the difference.
+ * Every category the product's own items sit in is always in the subset, so
+ * the ranking can never omit one the table below it shows.
+ */
+export const CATEGORY_ENGAGEMENT: CategoryEngagement[] = PRODUCTS.flatMap((product) => {
+  const parent = PRODUCT_ENGAGEMENT.find((p) => p.product === product)!;
+  const filed = new Set(ITEM_TITLES[product].map(([, category]) => category));
+  const covered = CATEGORIES.filter((c) => filed.has(c) || rnd() > 0.45);
+  const weights = covered.map(() => 0.35 + rnd());
+  const total = weights.reduce((a, b) => a + b, 0);
+  return covered.map((category, i) => {
+    const views = Math.round(parent.views * (weights[i] / total));
+    // Around the product's own rate, wide enough that the ranking means
+    // something and narrow enough that it stays the same product.
+    const rate = Math.round(parent.rate * (0.62 + rnd() * 0.85) * 10) / 10;
+    return { product, category, views, actions: Math.round((views * rate) / 100), rate };
+  });
+});
+
+export interface ItemEngagement {
+  product: Product;
+  id: number;
+  title: string;
+  category: string;
+  views: number;
+  likes: number;
+  shares: number;
+  saves: number;
+  rate: number;
+}
+
+/**
+ * The best-performing items, per product — the "which one" that a rate by
+ * category cannot answer. A long tail on purpose: the top item is worth
+ * several of the eighth, which is what makes a ranking worth reading.
+ */
+export const TOP_ITEMS: ItemEngagement[] = PRODUCTS.flatMap((product, p) => {
+  const parent = PRODUCT_ENGAGEMENT.find((x) => x.product === product)!;
+  /* Drawn out of the product's own views rather than freely, or a Trax
+     episode ends up with more plays than Trax has. These eight are the head
+     of the catalogue, not all of it, so they take about half of it. */
+  const weights = ITEM_TITLES[product].map((_, i) => (0.75 + rnd() * 0.5) / (1 + i * 0.55));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const pool = parent.views * frac(0.34, 0.52);
+  return ITEM_TITLES[product].map(([title, category], i) => {
+    const views = Math.round((pool * weights[i]) / total);
+    const rate = Math.round(parent.rate * (0.7 + rnd() * 0.8) * 10) / 10;
+    const actions = Math.round((views * rate) / 100);
+    return {
+      product,
+      id: 100 * (p + 1) + i * 3,
+      title,
+      category,
+      views,
+      likes: Math.round(actions * frac(0.6, 0.75)),
+      shares: Math.round(actions * frac(0.08, 0.16)),
+      saves: Math.round(actions * frac(0.12, 0.22)),
+      rate,
+    };
+  });
+});
+
 /* ───────────────────────── audience & places ──────────────────────── */
 
 export interface PlaceRow {
@@ -712,6 +916,7 @@ export const COVERAGE: { panel: string; measurable: boolean; note: string }[] = 
   { panel: "Reach — DAU, WAU, MAU, sessions", measurable: true, note: "Sessions are recorded per device." },
   { panel: "Likes, comments, shares, saves by window", measurable: true, note: "Stored per item; only the time split is unqueried." },
   { panel: "Publishing by category, day and week", measurable: true, note: "Entirely derivable from content_items." },
+  { panel: "Engagement by product and category", measurable: true, note: "content_stats carries the kind and category of every item." },
   { panel: "Editorial performance", measurable: true, note: "The audit log carries who published what." },
   { panel: "Store rating", measurable: true, note: "From the store APIs, not from us." },
   { panel: "Trax plays, likes, shares", measurable: true, note: "Counted. Completion and listen length are not." },

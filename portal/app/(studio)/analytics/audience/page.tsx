@@ -39,6 +39,7 @@ import {
   BY_CITY,
   BY_STATE,
   CATEGORIES,
+  CATEGORY_ENGAGEMENT,
   CONTENT_TYPES,
   CONTENT_TYPE_LABEL,
   COVERAGE,
@@ -53,21 +54,28 @@ import {
   LATEST_WEEK,
   NOTIFICATIONS,
   NOTIFICATION_BY_SECTION,
+  PRODUCTS,
+  PRODUCT_ENGAGEMENT,
+  PRODUCT_LABEL,
   PUBLISHING_ROWS,
   PUSH_SUMMARY,
   RATING,
   TIMEZONE,
   TIME_SECTIONS,
   TODAY,
+  TOP_ITEMS,
   TRAX_ROWS,
   TRAX_TIME_ROWS,
   WINDOW_DAYS,
   type DauRow,
   type EditorRow,
   type InteractionRow,
+  type ItemEngagement,
   type NotificationRow,
   type NotificationSectionRow,
   type ContentType,
+  type Product,
+  type ProductEngagement,
   type PublishingRow,
   type TimeSection,
   type TraxRow,
@@ -86,19 +94,13 @@ import {
  * panels could be wired to real data today.
  */
 
-type Tab =
-  | "dau"
-  | "notifications"
-  | "interactions"
-  | "publishing"
-  | "trax";
+type Tab = "dau" | "notifications" | "engagement" | "publishing";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dau", label: "DAU & time spent" },
   { key: "notifications", label: "Notification delivery" },
-  { key: "interactions", label: "Interactions & AI questions" },
+  { key: "engagement", label: "Engagement" },
   { key: "publishing", label: "Publishing by category" },
-  { key: "trax", label: "Trax engagement" },
 ];
 
 /** "08-26 6am–9am". The year is dropped: every label carries it, so it is the
@@ -290,7 +292,7 @@ export default function AudiencePage() {
   /** Set by the View control and by clicking a bar; walked back from the breadcrumb. */
   const [drill, setDrill] = useState<Drill>(GRAIN_DRILL.daily);
   const [dauMetric, setDauMetric] = useState<
-    "registeredDau" | "guestDevices" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
+    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
   >("registeredDau");
   const [interactionMetric, setInteractionMetric] = useState<
     "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
@@ -545,7 +547,7 @@ export default function AudiencePage() {
               onChange={setDauMetric}
               options={[
                 { key: "registeredDau" as const, label: "Registered DAU" },
-                { key: "guestDevices" as const, label: "Guest devices" },
+                { key: "sessions" as const, label: "Active sessions" },
                 { key: "cardsSwiped" as const, label: "Cards swiped" },
                 { key: "rightSwipes" as const, label: "Right swipes" },
                 { key: "secondsPerActive" as const, label: "Seconds / active user" },
@@ -553,7 +555,7 @@ export default function AudiencePage() {
             />
           )}
 
-          {tab === "interactions" && (
+          {tab === "engagement" && (
             <Select
               label="Metric"
               value={interactionMetric}
@@ -594,13 +596,17 @@ export default function AudiencePage() {
         {tab === "notifications" && (
           <NotificationsTab rows={notificationSectionRows} view={view} />
         )}
-        {tab === "interactions" && (
-          <InteractionsTab rows={interactionRows} metric={interactionMetric} view={view} />
+        {tab === "engagement" && (
+          <EngagementTab
+            rows={interactionRows}
+            metric={interactionMetric}
+            view={view}
+            section={section}
+          />
         )}
         {tab === "publishing" && (
           <PublishingTab view={view} contentType={contentType} section={section} />
         )}
-        {tab === "trax" && <TraxTab view={view} section={section} />}
       </div>
 
       {/* ── Audience engagement ───────────────────────────────────────── */}
@@ -900,7 +906,7 @@ function OutOfRange({ drill }: { drill: Drill }) {
 
 const DAU_LABEL: Record<string, string> = {
   registeredDau: "Registered DAU",
-  guestDevices: "Guest devices",
+  sessions: "Active sessions",
   cardsSwiped: "Cards swiped",
   rightSwipes: "Right swipes",
   secondsPerActive: "Seconds / active user",
@@ -915,7 +921,8 @@ const DAU_LABEL: Record<string, string> = {
  */
 const DAU_AGG: Record<string, { day?: "sum" | "mean"; week?: "sum" | "mean" }> = {
   registeredDau: { day: "sum", week: "mean" },
-  guestDevices: { day: "sum", week: "mean" },
+  // A session is an event, not a person, so unlike readers these add up.
+  sessions: { day: "sum", week: "sum" },
   cardsSwiped: { day: "sum", week: "sum" },
   rightSwipes: { day: "sum", week: "sum" },
   secondsPerActive: { day: "mean", week: "mean" },
@@ -929,7 +936,7 @@ function DauTab({
   rows: DauRow[];
   metric: keyof Pick<
     DauRow,
-    "registeredDau" | "guestDevices" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
+    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
   >;
   view: ViewState;
 }) {
@@ -945,7 +952,8 @@ function DauTab({
     <>
       <p className="mb-3 text-[12px] text-faint">
         DAU counts registered users whose recorded session overlaps the time
-        section; guest devices are counted separately.
+        section. Sessions are counted where they opened, so a reader who comes
+        back after lunch is one reader and two sessions.
       </p>
       <AxisBarChart
         labels={points.map((p) => p.label)}
@@ -968,10 +976,10 @@ function DauTab({
               render: (r) => fmt(r.registeredDau),
             },
             {
-              key: "guests",
-              label: "Guest devices",
+              key: "sessions",
+              label: "Active sessions",
               numeric: true,
-              render: (r) => fmt(r.guestDevices),
+              render: (r) => fmt(r.sessions),
             },
             {
               key: "cards",
@@ -1084,10 +1092,14 @@ const INTERACTION_LABEL: Record<string, string> = {
   aiQuestions: "AI questions",
 };
 
-function InteractionsTab({
+/** Every deliberate tap, as against a view, which is only an open. */
+const actionsOf = (p: ProductEngagement) => p.likes + p.comments + p.shares + p.saves;
+
+function EngagementTab({
   rows,
   metric,
   view,
+  section,
 }: {
   rows: InteractionRow[];
   metric: keyof Pick<
@@ -1095,63 +1107,228 @@ function InteractionsTab({
     "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
   >;
   view: ViewState;
+  section: TimeSection | "all";
 }) {
+  /** Which product the panels at the bottom are about. */
+  const [product, setProduct] = useState<Product>("article");
+
   const shown = scope(rows, view.drill);
   /* All of these are counted events, so they add at every resolution. */
   const points = bucket(shown, view.grain, (r) => r[metric] as number);
 
-  if (!shown.length) return <OutOfRange drill={view.drill} />;
+  const ranked = useMemo(
+    () => [...PRODUCT_ENGAGEMENT].sort((a, b) => actionsOf(b) - actionsOf(a)),
+    []
+  );
+
+  const categories = useMemo(
+    () =>
+      CATEGORY_ENGAGEMENT.filter((c) => c.product === product).sort(
+        (a, b) => b.rate - a.rate
+      ),
+    [product]
+  );
+
+  const items = useMemo(
+    () =>
+      TOP_ITEMS.filter((i) => i.product === product).sort((a, b) => b.views - a.views),
+    [product]
+  );
 
   return (
     <>
-      <p className="mb-3 text-[12px] text-faint">
-        Likes, shares, comments and saves across articles, buzz, videos, audio,
-        magazines, polls and live updates. AI questions count user messages sent
-        to the news and buzz chats.
-      </p>
-      <AxisBarChart
-        labels={points.map((p) => p.label)}
-        values={points.map((p) => p.value)}
-        name={INTERACTION_LABEL[metric]}
-        onSelect={selector(view, points, levelOf(view.grain))}
-      />
-      <div className="mt-4">
-        <DataTable<InteractionRow>
-          rows={shown}
-          rowKey={(r) => r.day + r.section}
-          columns={[
-            { key: "day", label: "Day", render: (r) => r.day },
-            { key: "week", label: "Week", render: (r) => r.week },
-            { key: "section", label: "Time section", render: (r) => r.section },
-            { key: "views", label: "Views", numeric: true, render: (r) => fmt(r.views) },
-            { key: "likes", label: "Likes", numeric: true, render: (r) => fmt(r.likes) },
-            {
-              key: "comments",
-              label: "Comments",
-              numeric: true,
-              render: (r) => fmt(r.comments),
-            },
-            { key: "shares", label: "Shares", numeric: true, render: (r) => fmt(r.shares) },
-            { key: "saves", label: "Saves", numeric: true, render: (r) => fmt(r.saves) },
-            {
-              key: "ai",
-              label: "AI questions",
-              numeric: true,
-              render: (r) => fmt(r.aiQuestions),
-            },
-            {
-              key: "src",
-              label: "Source taps",
-              numeric: true,
-              render: (r) => fmt(r.sourceTaps),
-            },
-          ]}
-        />
+      {shown.length ? (
+        <>
+          <p className="mb-3 text-[12px] text-faint">
+            Likes, shares, comments and saves across every product. AI questions
+            count user messages sent to the news and buzz chats.
+          </p>
+          <AxisBarChart
+            labels={points.map((p) => p.label)}
+            values={points.map((p) => p.value)}
+            name={INTERACTION_LABEL[metric]}
+            onSelect={selector(view, points, levelOf(view.grain))}
+          />
+          <div className="mt-4">
+            <DataTable<InteractionRow>
+              rows={shown}
+              rowKey={(r) => r.day + r.section}
+              columns={[
+                { key: "day", label: "Day", render: (r) => r.day },
+                { key: "week", label: "Week", render: (r) => r.week },
+                { key: "section", label: "Time section", render: (r) => r.section },
+                { key: "views", label: "Views", numeric: true, render: (r) => fmt(r.views) },
+                { key: "likes", label: "Likes", numeric: true, render: (r) => fmt(r.likes) },
+                {
+                  key: "comments",
+                  label: "Comments",
+                  numeric: true,
+                  render: (r) => fmt(r.comments),
+                },
+                { key: "shares", label: "Shares", numeric: true, render: (r) => fmt(r.shares) },
+                { key: "saves", label: "Saves", numeric: true, render: (r) => fmt(r.saves) },
+                {
+                  key: "ai",
+                  label: "AI questions",
+                  numeric: true,
+                  render: (r) => fmt(r.aiQuestions),
+                },
+                {
+                  key: "src",
+                  label: "Source taps",
+                  numeric: true,
+                  render: (r) => fmt(r.sourceTaps),
+                },
+              ]}
+            />
+          </div>
+          <p className="mt-3 text-[12px] text-rose">
+            Unavailable: no event fires on the sources or ask buttons — the AI
+            columns are modelled.
+          </p>
+        </>
+      ) : (
+        <OutOfRange drill={view.drill} />
+      )}
+
+      {/* ── By product ──────────────────────────────────────────────── */}
+      <div className="mt-7 border-t border-line pt-5">
+        <h3 className="text-sm font-bold">Engagement by product</h3>
+        <p className="mt-1 mb-4 text-[12px] text-faint">
+          Whole-window totals, so these do not follow the opened bar above: how
+          a product is doing is a question about the fortnight, not about
+          Tuesday morning. Read the rate beside the total — Pix takes a fraction
+          of the views and the most actions per view, and a ranking by total
+          alone would only report how much of each the desk files.
+        </p>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div>
+            <h4 className="mb-3 text-[12px] font-bold text-faint">
+              Actions — likes, comments, shares, saves
+            </h4>
+            <BarList
+              rows={ranked.map((p) => ({
+                name: PRODUCT_LABEL[p.product],
+                value: actionsOf(p),
+              }))}
+            />
+          </div>
+          <div>
+            <h4 className="mb-3 text-[12px] font-bold text-faint">
+              Actions per hundred views
+            </h4>
+            <BarList
+              rows={[...PRODUCT_ENGAGEMENT]
+                .sort((a, b) => b.rate - a.rate)
+                .map((p) => ({ name: PRODUCT_LABEL[p.product], value: p.rate }))}
+              tone="bg-mint"
+              format={(n) => n.toFixed(1)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <DataTable<ProductEngagement>
+            rows={ranked}
+            rowKey={(r) => r.product}
+            columns={[
+              { key: "product", label: "Product", render: (r) => PRODUCT_LABEL[r.product] },
+              { key: "views", label: "Views", numeric: true, render: (r) => fmt(r.views) },
+              { key: "likes", label: "Likes", numeric: true, render: (r) => fmt(r.likes) },
+              {
+                key: "comments",
+                label: "Comments",
+                numeric: true,
+                render: (r) => fmt(r.comments),
+              },
+              { key: "shares", label: "Shares", numeric: true, render: (r) => fmt(r.shares) },
+              { key: "saves", label: "Saves", numeric: true, render: (r) => fmt(r.saves) },
+              {
+                key: "rate",
+                label: "Per 100 views",
+                numeric: true,
+                render: (r) => r.rate.toFixed(1),
+              },
+            ]}
+          />
+        </div>
       </div>
-      <p className="mt-3 text-[12px] text-rose">
-        Unavailable: no event fires on the sources or ask buttons — the AI
-        columns are modelled.
-      </p>
+
+      {/* ── Inside one product ──────────────────────────────────────── */}
+      <div className="mt-7 border-t border-line pt-5">
+        <h3 className="text-sm font-bold">Inside a product</h3>
+        <p className="mt-1 mb-4 text-[12px] text-faint">
+          Which category performs best, and which items carried it. Categories
+          are ranked by rate rather than by volume: the biggest category is
+          usually the one most was filed in, which says more about the desk than
+          about the readers.
+        </p>
+
+        <PillTabs
+          tabs={PRODUCTS.map((p) => ({ key: p, label: PRODUCT_LABEL[p] }))}
+          value={product}
+          onChange={setProduct}
+        />
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h4 className="mb-3 text-[12px] font-bold text-faint">
+              Best categories · {PRODUCT_LABEL[product]}
+            </h4>
+            <BarList
+              rows={categories.map((c) => ({ name: c.category, value: c.rate }))}
+              tone="bg-violet"
+              format={(n) => n.toFixed(1)}
+            />
+            <p className="mt-2 text-[11px] text-faint">
+              Actions per hundred views. Categories nobody files under for this
+              product are absent rather than shown as zero.
+            </p>
+          </div>
+          <div>
+            <h4 className="mb-3 text-[12px] font-bold text-faint">
+              Where the views went · {PRODUCT_LABEL[product]}
+            </h4>
+            <BarList rows={categories.map((c) => ({ name: c.category, value: c.views }))} />
+            <p className="mt-2 text-[11px] text-faint">
+              The same categories by volume. A category high in one list and low
+              in the other is the interesting one.
+            </p>
+          </div>
+        </div>
+
+        {product === "trax" ? (
+          <TraxDetail view={view} section={section} />
+        ) : (
+          <div className="mt-5">
+            <DataTable<ItemEngagement>
+              rows={items}
+              rowKey={(r) => String(r.id)}
+              maxHeight={420}
+              columns={[
+                { key: "id", label: "Id", numeric: true, render: (r) => r.id },
+                {
+                  key: "title",
+                  label: "Title",
+                  render: (r) => <span className="line-clamp-2">{r.title}</span>,
+                },
+                { key: "category", label: "Category", render: (r) => r.category },
+                { key: "views", label: "Views", numeric: true, render: (r) => fmt(r.views) },
+                { key: "likes", label: "Likes", numeric: true, render: (r) => fmt(r.likes) },
+                { key: "shares", label: "Shares", numeric: true, render: (r) => fmt(r.shares) },
+                { key: "saves", label: "Saves", numeric: true, render: (r) => fmt(r.saves) },
+                {
+                  key: "rate",
+                  label: "Per 100 views",
+                  numeric: true,
+                  render: (r) => r.rate.toFixed(1),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </div>
     </>
   );
 }
@@ -1295,7 +1472,15 @@ function PublishingTab({
   );
 }
 
-function TraxTab({ view, section }: { view: ViewState; section: TimeSection | "all" }) {
+/**
+ * Trax has a question the other products do not: whether anyone finished.
+ *
+ * It used to be a tab of its own for that reason. Folded in here instead —
+ * "how is audio doing" is the same question as "how are articles doing", and
+ * answering it two screens apart made them impossible to compare — with the
+ * two columns only audio has kept rather than flattened away.
+ */
+function TraxDetail({ view, section }: { view: ViewState; section: TimeSection | "all" }) {
   const rows = useMemo(
     () =>
       section === "all"
@@ -1311,7 +1496,7 @@ function TraxTab({ view, section }: { view: ViewState; section: TimeSection | "a
   if (!shown.length) return <OutOfRange drill={view.drill} />;
 
   return (
-    <>
+    <div className="mt-5">
       <p className="mb-3 text-[12px] text-faint">
         Listening over time, then per episode. A play is cheap; finishing one is
         the signal, so completions sit beside plays rather than under them.
@@ -1365,6 +1550,6 @@ function TraxTab({ view, section }: { view: ViewState; section: TimeSection | "a
         Unavailable: completion and listen length are not recorded — plays,
         likes and shares are the columns that could be real today.
       </p>
-    </>
+    </div>
   );
 }
