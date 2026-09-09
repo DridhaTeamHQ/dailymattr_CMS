@@ -15,6 +15,8 @@ import { COVERS, MEDIA, uploadBlob, uploadDataUrl } from "./storage";
 import { newsstudio, supabase } from "./supabase";
 import type {
   ArticleSelection,
+  PushAudiencePreview,
+  TasteSummary,
   AuditEntry,
   Category,
   CmsUser,
@@ -1022,6 +1024,7 @@ export async function listContentStats(
         commentOpens: Number(r.comment_opens ?? 0),
         comments: Number(r.comments ?? 0),
         sourceOpens: Number(r.source_opens ?? 0),
+        pushOpens: Number(r.push_opens ?? 0),
         lastAt: (r.last_at as string | null) ?? null,
       });
     }
@@ -1082,6 +1085,7 @@ export const EMPTY_STATS: ContentStats = {
   commentOpens: 0,
   comments: 0,
   sourceOpens: 0,
+  pushOpens: 0,
   lastAt: null,
 };
 
@@ -1307,6 +1311,64 @@ export async function pushAudienceSize(): Promise<number> {
   }
 }
 
+/**
+ * Who a push about `topic` would reach, split by why. Null when the migration
+ * is not applied or the role may not ask — the composer then only offers
+ * "everyone", which is exactly what it could do before.
+ */
+export async function pushAudiencePreview(topic: string): Promise<PushAudiencePreview | null> {
+  try {
+    const { data, error } = await supabase.rpc("app_push_audience_preview", {
+      p_topic: topic,
+    });
+    if (error) {
+      if (!/does not exist/i.test(error.message)) console.warn("[push]", error.message);
+      return null;
+    }
+    const d = (data ?? {}) as Partial<Record<keyof PushAudiencePreview, number>>;
+    if (d.total === undefined) return null;
+    return {
+      total: Number(d.total ?? 0),
+      off: Number(d.off ?? 0),
+      positive: Number(d.positive ?? 0),
+      unknown: Number(d.unknown ?? 0),
+      excluded: Number(d.excluded ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How the audience leans, per topic, from what the app reports about itself.
+ * The number is the same affinity the app ranks its own feed with, so a topic
+ * that reads "negative" here is one readers skim and dismiss on their phones.
+ */
+export async function listTasteSummary(): Promise<TasteSummary[]> {
+  try {
+    const { data, error } = await supabase
+      .from("reader_taste_summary")
+      .select("*")
+      .order("mean_affinity", { ascending: false });
+    if (error) {
+      if (!/does not exist|permission denied/i.test(error.message)) {
+        console.warn("[taste]", error.message);
+      }
+      return [];
+    }
+    return ((data ?? []) as Row[]).map((r) => ({
+      topic: r.topic as string,
+      devices: Number(r.devices ?? 0),
+      positive: Number(r.positive ?? 0),
+      negative: Number(r.negative ?? 0),
+      meanAffinity: Number(r.mean_affinity ?? 0),
+      lastAt: (r.last_at as string | null) ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** Stories readers have already been told about, keyed by `statKey`. */
 export async function listNotified(): Promise<Set<string>> {
   const out = new Set<string>();
@@ -1344,6 +1406,14 @@ export async function notifyReaders(input: {
   body?: string;
   /** Cover image; Android shows it in the expanded notification. */
   image?: string;
+  /**
+   * `all` is the broadcast this has always been. `topic` sends only to
+   * readers whose own feed affinity leans toward `topic`, plus readers the
+   * app has not learned about yet — see migration 16.
+   */
+  audience?: "all" | "topic";
+  /** The category *name* as the app carries it ("Politics"). Required for `topic`. */
+  topic?: string;
 }): Promise<{ sent: number; attempted: number; failed: number }> {
   const { data: session } = await supabase.auth.getSession();
   const token = session.session?.access_token;

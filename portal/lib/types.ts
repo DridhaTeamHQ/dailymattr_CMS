@@ -166,6 +166,32 @@ export interface ContentStats {
   comments: number;
   /** Tapped through to the publisher. */
   sourceOpens: number;
+  /** Arrived from a notification tap. The result of a push, per story. */
+  pushOpens: number;
+  lastAt: string | null;
+}
+
+/** Who a push would reach under a rule, before anyone presses send. */
+export interface PushAudiencePreview {
+  /** Every registered phone. */
+  total: number;
+  /** Turned notifications off in the app. Never sent to. */
+  off: number;
+  /** Leans toward the topic: the app's own affinity is above the threshold. */
+  positive: number;
+  /** No opinion yet on this topic — new readers, included by default. */
+  unknown: number;
+  /** Below the threshold, including "not interested". Left alone. */
+  excluded: number;
+}
+
+/** One row of reader_taste_summary: how the audience leans on one topic. */
+export interface TasteSummary {
+  topic: string;
+  devices: number;
+  positive: number;
+  negative: number;
+  meanAffinity: number;
   lastAt: string | null;
 }
 

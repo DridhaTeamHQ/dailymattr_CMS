@@ -11,6 +11,7 @@ import { QixCard } from "@/components/QixCard";
 import { StatsStrip } from "@/components/StatsStrip";
 import { TraxCard } from "@/components/TraxCard";
 import { TraxAudioPlayer } from "@/components/TraxAudioPlayer";
+import NotifyDialog, { type NotifyRule, type NotifyTarget } from "@/components/NotifyDialog";
 import { Modal, Pill, SectionHeader, StatusPill } from "@/components/ui";
 import { can, useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
@@ -89,6 +90,7 @@ function KindList() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [notifyTarget, setNotifyTarget] = useState<NotifyTarget | null>(null);
   const [tab, setTab] = useState<PixTab>("all");
   const [page, setPage] = usePageParam();
   const [activeVideo, setActiveVideo] = useState<ContentItem | null>(null);
@@ -225,33 +227,44 @@ function KindList() {
      something that fires because a star got clicked. The database refuses a
      second send for the same story, so the disabled state here is a courtesy
      rather than the actual guard. */
-  const notify = async (c: ContentItem) => {
+  const notify = (c: ContentItem) => {
     const already = notified.has(statKey("cms", c.id));
     if (already || audience === 0) return;
-    if (
-      !window.confirm(
-        `Notify ${audience} ${audience === 1 ? "reader" : "readers"} about "${c.title}"?
+    // The composer decides who: everyone, or readers who lean toward the
+    // story's category. It shows the counts before anything is sent.
+    setNotifyTarget({
+      source: "cms",
+      contentId: c.id,
+      title: c.title,
+      category: c.categorySlug,
+    });
+  };
 
-This cannot be undone or recalled.`,
-      )
-    )
-      return;
-
-    await toast.run(
+  const sendNotify = async (rule: NotifyRule, topic: string | null) => {
+    const t = notifyTarget;
+    if (!t) return;
+    const c = rows.find((x) => x.id === t.contentId);
+    const ok = await toast.run(
       async () => {
         const r = await notifyReaders({
           source: "cms",
-          contentId: c.id,
-          title: c.title,
-          body: c.summary,
-          image: c.coverUrl ?? undefined,
+          contentId: t.contentId,
+          title: t.title,
+          body: c?.summary,
+          image: c?.coverUrl ?? undefined,
+          audience: rule,
+          topic: topic ?? undefined,
         });
         if (r.failed > 0) {
           throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);
         }
       },
-      { success: "Readers notified", error: "Couldn't notify readers" },
+      {
+        success: topic ? `Readers who lean toward ${topic} notified` : "Readers notified",
+        error: "Couldn't notify readers",
+      },
     );
+    if (ok) setNotifyTarget(null);
     refetch();
   };
 
@@ -852,6 +865,12 @@ This cannot be undone or recalled.`,
           </div>
         )}
       </AnimatePresence>
+      <NotifyDialog
+        target={notifyTarget}
+        reachable={audience}
+        onClose={() => setNotifyTarget(null)}
+        onSend={sendNotify}
+      />
       {kind === "pix" && (
         <>
           <PixPreviewModal

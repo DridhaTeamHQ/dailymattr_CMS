@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import ArticlePreview from "@/components/ArticlePreview";
+import NotifyDialog, { type NotifyRule, type NotifyTarget } from "@/components/NotifyDialog";
 import NewsVisual from "@/components/NewsVisual";
 import { Pager } from "@/components/Pager";
 import { Pill, SectionHeader, StatusPill } from "@/components/ui";
@@ -71,6 +72,7 @@ function ArticlesTabs() {
   const [tab, setTab] = useState<Tab>("newsstudio");
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [notifyTarget, setNotifyTarget] = useState<NotifyTarget | null>(null);
   // One page counter, held in ?page — the tabs reset it, so each list starts
   // at the top.
   const [page, setPage] = usePageParam();
@@ -271,34 +273,46 @@ function ArticlesTabs() {
      decision someone makes while looking at the recipient count. The database
      refuses a second send for the same story, so the disabled state here is a
      courtesy rather than the guard. */
-  const notify = async (art: NewsStudioArticle) => {
+  const notify = (art: NewsStudioArticle) => {
     const audience = data?.audience ?? 0;
     const sel = data?.selections.find((x) => x.articleId === art.id);
     if (!data || data.notified.has(statKey("pipeline", art.id)) || audience === 0) return;
-    if (
-      !window.confirm(
-        `Notify ${audience} ${audience === 1 ? "reader" : "readers"} about "${art.title}"?
+    // The composer decides who; the pipeline's topic is folded into the
+    // desk's categories inside it, the same way the app does it.
+    setNotifyTarget({
+      source: "pipeline",
+      contentId: art.id,
+      title: sel?.titleOverride?.trim() || art.title,
+      category: art.category,
+    });
+  };
 
-This cannot be undone or recalled.`,
-      )
-    )
-      return;
-
-    await toast.run(
+  const sendNotify = async (rule: NotifyRule, topic: string | null) => {
+    const t = notifyTarget;
+    if (!t || !data) return;
+    const art = data.feedArticles.find((a) => a.id === t.contentId);
+    const sel = data.selections.find((x) => x.articleId === t.contentId);
+    const ok = await toast.run(
       async () => {
         const r = await notifyReaders({
           source: "pipeline",
-          contentId: art.id,
-          title: sel?.titleOverride?.trim() || art.title,
-          body: sel?.summaryOverride?.trim() || art.summary,
-          image: sel?.imageOverride?.trim() || art.imageUrl,
+          contentId: t.contentId,
+          title: t.title,
+          body: sel?.summaryOverride?.trim() || art?.summary,
+          image: sel?.imageOverride?.trim() || art?.imageUrl,
+          audience: rule,
+          topic: topic ?? undefined,
         });
         if (r.failed > 0) {
           throw new Error(`Sent to ${r.sent} of ${r.attempted}. ${r.failed} failed.`);
         }
       },
-      { success: "Readers notified", error: "Couldn't notify readers" },
+      {
+        success: topic ? `Readers who lean toward ${topic} notified` : "Readers notified",
+        error: "Couldn't notify readers",
+      },
     );
+    if (ok) setNotifyTarget(null);
     refetch();
   };
 
@@ -928,6 +942,13 @@ This cannot be undone or recalled.`,
           />
         </>
       )}
+
+      <NotifyDialog
+        target={notifyTarget}
+        reachable={data.audience}
+        onClose={() => setNotifyTarget(null)}
+        onSend={sendNotify}
+      />
 
       <ArticlePreview
         article={previewArticle}

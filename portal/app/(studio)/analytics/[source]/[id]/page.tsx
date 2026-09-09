@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft,
+  BellRing,
   Bookmark,
   ExternalLink,
   Eye,
@@ -117,6 +118,12 @@ export default function AnalyticsDetailPage() {
 
   const secondary: [typeof Eye, string, number, string][] = [
     [
+      BellRing,
+      "Arrived from a notification",
+      s.pushOpens,
+      "Tapped the push about this story. The result of a send, not the send.",
+    ],
+    [
       MessagesSquare,
       "Comment panel opened",
       s.commentOpens,
@@ -132,6 +139,7 @@ export default function AnalyticsDetailPage() {
 
   const rates: [string, string, string][] = [
     ["Liked", pct(s.likes, s.views), "of everyone who opened it"],
+    ["Came from the push", pct(s.pushOpens, s.views), "of everyone who opened it"],
     ["Saved", pct(s.saves, s.views), "of everyone who opened it"],
     ["Shared", pct(s.shares, s.views), "of everyone who opened it"],
     [
@@ -211,7 +219,7 @@ export default function AnalyticsDetailPage() {
         })}
       </div>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2">
+      <div className="mb-5 grid gap-3 md:grid-cols-3">
         {secondary.map(([Icon, label, n, note]) => (
           <div key={label} className="card flex items-start gap-3 p-4">
             <Icon size={16} className="mt-0.5 shrink-0 text-faint" />

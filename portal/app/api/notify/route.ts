@@ -34,6 +34,10 @@ type Body = {
   body?: string;
   /** Cover image. Android renders it in the expanded notification. */
   image?: string;
+  /** `all` (default) or `topic` — see `app_push_audience` in migration 16. */
+  audience?: "all" | "topic";
+  /** Category name the app carries on its stories. Required when audience is `topic`. */
+  topic?: string;
 };
 
 /* A notification is the headline and nothing else.
@@ -122,13 +126,27 @@ async function broadcast(req: Request) {
     return NextResponse.json({ error: "Missing story details." }, { status: 400 });
   }
 
+  /* The rule is decided here once and carried through: the audience query,
+     the record and the payload all say the same thing about who this went to. */
+  const rule: "all" | "topic" = payload.audience === "topic" ? "topic" : "all";
+  const topic = (payload.topic ?? "").trim().slice(0, 40);
+  if (rule === "topic" && !topic) {
+    return NextResponse.json({ error: "Pick a topic to target." }, { status: 400 });
+  }
+
   // The editor's own session, not a privileged one.
   const db = createClient(url, anon, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: auth } },
   });
 
-  const { data: audience, error: audienceError } = await db.rpc("app_push_audience");
+  /* By rule. A null topic is the whole reachable audience; a topic is the
+     readers whose own feed leans toward it, plus those the app has not learned
+     about yet. Either way readers who turned alerts off are never returned. */
+  const { data: audience, error: audienceError } = await db.rpc("app_push_audience", {
+    p_topic: rule === "topic" ? topic : null,
+    p_include_new: true,
+  });
   if (audienceError) {
     // The RPC raises for anyone not allowed to broadcast; that is a 403, not a 500.
     const denied = /not allowed/i.test(audienceError.message);
@@ -144,7 +162,12 @@ async function broadcast(req: Request) {
 
   if (tokens.length === 0) {
     return NextResponse.json(
-      { error: "No reader has push enabled yet, so there is nobody to notify." },
+      {
+        error:
+          rule === "topic"
+            ? `No reader leans toward ${topic} yet, so there is nobody to notify.`
+            : "No reader has push enabled yet, so there is nobody to notify.",
+      },
       { status: 409 },
     );
   }
@@ -160,6 +183,8 @@ async function broadcast(req: Request) {
     p_content: contentId,
     p_title: title.trim(),
     p_recipients: tokens.length,
+    p_topic: rule === "topic" ? topic : null,
+    p_rule: rule,
   });
   if (recordError) {
     const already = /duplicate key|unique/i.test(recordError.message);
@@ -187,6 +212,9 @@ async function broadcast(req: Request) {
       articleId: source === "cms" ? `cms:${contentId}` : contentId,
       // Carried but not displayed: an in-app list can use it later.
       summary: (body ?? "").trim() || undefined,
+      // Why this phone got it. Not shown; kept so a future inbox can say so.
+      audience: rule,
+      topic: rule === "topic" ? topic : undefined,
     },
     channelId: "breaking",
     // Delivered now rather than batched with the system's next wake-up. A
