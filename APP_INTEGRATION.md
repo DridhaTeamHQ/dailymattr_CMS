@@ -411,3 +411,34 @@ and should be agreed with them, since RLS there is load-bearing.
 - Should engagement live in DB B, or a third project the app owns? Writes from
   readers into the editorial database is the main argument against.
 - Is there a canonical "view" definition already, or is the app defining it?
+
+---
+
+## 9. Reader taste and targeted push (migration 16)
+
+**Status: code on both sides; live once `supabase/migrations/16_taste_targeting.sql` is applied to DB B.**
+
+The app reports its own per-topic affinity — the number it ranks its feed
+with — and the hour its reader usually reads, into DB B next to the push
+token. The Studio targets pushes on it and sees it on the analytics page.
+
+| Call | Who | What |
+|---|---|---|
+| `app_report_taste(p_device, p_topics jsonb, p_band int)` | app, anon | Replaces the device's rows in `reader_taste` (topic name → affinity −1..1, ≤ 32 topics); sets `push_tokens.usual_band` (0 morning · 1 afternoon · 2 evening · 3 night). |
+| `app_set_push_enabled(p_device, p_on)` | app, anon | The reader's alerts switch. Off ⇒ never in any audience; token kept. |
+| `app_track_content(…, 'push_open', source)` | app, anon | A notification tap. Counted as `push_opens` in `content_stats`. |
+| `app_push_audience(p_topic, p_include_new, p_threshold)` | Studio, chief editor+ | Tokens to send to. `null` topic = everyone with alerts on; a topic = affinity ≥ threshold (0.15) plus readers with no row for it. Replaces the zero-arg version from 15. |
+| `app_push_audience_preview(p_topic)` | Studio, desk | `{total, off, positive, unknown, excluded}` — the counts the composer shows before sending. |
+| `app_record_notification(…, p_topic, p_rule)` | Studio | Adds `topic` and `audience_rule` (`all` \| `topic`) to `content_notifications`. |
+| `reader_taste_summary` (view) | Studio, chief editor+ | Per topic: devices, positive, negative, mean affinity, last report. |
+
+Topic strings are the app's category **names** ("Politics", "Technology"),
+not slugs, because that is what the app's affinity map is keyed by. The
+composer resolves a CMS slug or a pipeline topic to the name before asking;
+the pipeline fold (Tech & AI → Technology, Automobile → Business, …) is the
+same table the app applies and is duplicated in `components/NotifyDialog.tsx`.
+
+The app sends a taste report on background, at most every six hours and only
+when it changed; a fresh install reports nothing until it has read enough for
+an affinity to exist, which is why "new readers" are included in a topic
+audience by default.
