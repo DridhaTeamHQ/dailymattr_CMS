@@ -11,8 +11,10 @@ import {
   Search,
   Share2,
   ThumbsDown,
+  Users2,
 } from "lucide-react";
 import { Pager } from "@/components/Pager";
+import { AudienceTaste } from "@/components/AudienceTaste";
 import { Pill, SectionHeader } from "@/components/ui";
 import { fmt } from "@/components/StatsStrip";
 import { can, useAuth } from "@/lib/auth";
@@ -163,7 +165,15 @@ function AnalyticsTable() {
       <SectionHeader
         title="Analytics"
         sub="Counted by device — the app has no accounts, so these are phones rather than people. Live content only."
-      />
+      >
+        {/* This screen ranks content; the other one is about the readers. */}
+        <Link
+          href="/analytics/audience"
+          className="btn-ghost flex items-center gap-1.5 px-3 py-1.5 text-xs"
+        >
+          <Users2 size={13} /> Audience
+        </Link>
+      </SectionHeader>
 
       {/* Totals follow the filter, not the whole library. A number that ignores
           the filter above it invites the wrong comparison. */}
@@ -272,6 +282,10 @@ function AnalyticsTable() {
         onPage={setPage}
         label="stories"
       />
+
+      {/* Below the table, not beside it: the table is what readers did to
+          stories, this is what readers are. Different question, same page. */}
+      <AudienceTaste />
     </>
   );
 }
