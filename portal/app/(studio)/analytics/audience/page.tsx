@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   Activity,
+  Bell,
+  BellRing,
   Check,
   ChevronRight,
   Clock,
@@ -14,6 +16,7 @@ import {
   Layers,
   Minus,
   RefreshCw,
+  Send,
   Users,
 } from "lucide-react";
 import {
@@ -94,11 +97,10 @@ import {
  * panels could be wired to real data today.
  */
 
-type Tab = "dau" | "notifications" | "engagement" | "publishing";
+type Tab = "dau" | "engagement" | "publishing";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dau", label: "DAU & time spent" },
-  { key: "notifications", label: "Notification delivery" },
   { key: "engagement", label: "Engagement" },
   { key: "publishing", label: "Publishing by category" },
 ];
@@ -280,27 +282,25 @@ const mmss = (sec: number) => {
   return m ? `${m}m ${s}s` : `${s}s`;
 };
 
-export default function AudiencePage() {
-  const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("dau");
-  /** "all" keeps every window; picking one narrows every chart and table below. */
-  const [section, setSection] = useState<TimeSection | "all">("all");
+/**
+ * The resolution controls above a time chart, the window filter beside them,
+ * and the bar that has been opened inside them.
+ *
+ * A hook because two sections of this page carry their own set. Sharing one
+ * would mean the View switch in the tabbed card silently moving the
+ * notification chart three screens further down, which is the sort of thing
+ * nobody notices until the number they screenshot is not the number they
+ * meant.
+ */
+function useTimeView() {
   /* Daily by default: fourteen days times seven windows is ninety-eight bars,
      which answers "when in the day" at the cost of "how is the week going",
      and the latter is what people open the page for. */
   const [grain, setGrain] = useState<Granularity>("daily");
   /** Set by the View control and by clicking a bar; walked back from the breadcrumb. */
   const [drill, setDrill] = useState<Drill>(GRAIN_DRILL.daily);
-  const [dauMetric, setDauMetric] = useState<
-    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
-  >("registeredDau");
-  const [interactionMetric, setInteractionMetric] = useState<
-    "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
-  >("likes");
-  /** Publishing splits by product as well as by time. */
-  const [contentType, setContentType] = useState<ContentType | "all">("all");
-  /** Bumping this re-mounts the section, which is what "Refresh" means here. */
-  const [nonce, setNonce] = useState(0);
+  /** "all" keeps every window; picking one narrows the charts below it. */
+  const [section, setSection] = useState<TimeSection | "all">("all");
 
   /* One object rather than four props, because it goes to every tab and the
      tabs only ever read it together. */
@@ -313,6 +313,43 @@ export default function AudiencePage() {
     }),
     [grain, drill]
   );
+
+  /** Picking a resolution outright resets where you are inside it. */
+  const chooseGrain = (g: Granularity) => {
+    setGrain(g);
+    setDrill(GRAIN_DRILL[g]);
+  };
+
+  /* Climbing out of the day is a request for the run of days above it, and
+     "Daily" no longer means a fortnight of them, so the control steps up with
+     the crumb rather than contradicting it. */
+  const chooseDrill = (d: Drill) => {
+    if (!d.week && !d.day && grain === "daily") setGrain("weekly");
+    setDrill(d);
+  };
+
+  return { grain, chooseGrain, drill, chooseDrill, section, setSection, view };
+}
+
+export default function AudiencePage() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState<Tab>("dau");
+  /** The tabbed card's own resolution, window filter and opened bar. */
+  const main = useTimeView();
+  /** Notifications carry theirs, so the two sections cannot move each other. */
+  const push = useTimeView();
+  const [dauMetric, setDauMetric] = useState<
+    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
+  >("registeredDau");
+  const [interactionMetric, setInteractionMetric] = useState<
+    "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
+  >("likes");
+  /** Publishing splits by product as well as by time. */
+  const [contentType, setContentType] = useState<ContentType | "all">("all");
+  /** Bumping this re-mounts the section, which is what "Refresh" means here. */
+  const [nonce, setNonce] = useState(0);
+
+  const section = main.section;
 
   /* Inlined per list rather than shared through a helper: a function defined
      in the component body is a new reference every render, so a memo that
@@ -328,12 +365,13 @@ export default function AudiencePage() {
         : INTERACTION_ROWS.filter((r) => r.section === section),
     [section]
   );
+  /** Notifications read their own window filter, not the tabbed card's. */
   const notificationSectionRows = useMemo(
     () =>
-      section === "all"
+      push.section === "all"
         ? NOTIFICATION_BY_SECTION
-        : NOTIFICATION_BY_SECTION.filter((r) => r.section === section),
-    [section]
+        : NOTIFICATION_BY_SECTION.filter((r) => r.section === push.section),
+    [push.section]
   );
 
   if (!user || !can.seeStats(user.role)) {
@@ -388,11 +426,18 @@ export default function AudiencePage() {
               notification performance and audio adoption from one workspace
               designed for quick decisions.
             </p>
+            {/* Counts both window filters, since the two sections carry one
+                each — a chip reading "0" while a chart below is narrowed would
+                be worse than no chip. */}
             <div className="mt-4 flex flex-wrap gap-2">
-              <Chip>Notification window: Overall</Chip>
+              <Chip>
+                Notification window:{" "}
+                {push.section === "all" ? "Overall" : push.section}
+              </Chip>
               <Chip>Audio scope: Overall</Chip>
               <Chip>
-                Active filters: {section === "all" ? 0 : 1}
+                Active filters:{" "}
+                {(section === "all" ? 0 : 1) + (push.section === "all" ? 0 : 1)}
               </Chip>
             </div>
           </div>
@@ -504,24 +549,19 @@ export default function AudiencePage() {
         <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
         <div className="mt-4 mb-3 flex flex-wrap items-center gap-3">
-          {/* One resolution control for every chart on the page, rather than a
-              different toggle per tab. */}
+          {/* One resolution control for every tab in this card. Notifications
+              have their own, down in their own section. */}
           <Segmented
             label="View"
             options={GRANULARITIES}
-            value={grain}
-            onChange={(g) => {
-              /* Picking a resolution outright resets where you are inside it:
-                 back to every week, or straight into the latest day. */
-              setGrain(g);
-              setDrill(GRAIN_DRILL[g]);
-            }}
+            value={main.grain}
+            onChange={main.chooseGrain}
           />
 
           <Select
             label="Time section"
             value={section}
-            onChange={setSection}
+            onChange={main.setSection}
             options={[
               { key: "all" as const, label: "All sections" },
               ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
@@ -576,36 +616,24 @@ export default function AudiencePage() {
           </GhostButton>
         </div>
 
-        <Breadcrumb
-          drill={drill}
-          onDrill={(d) => {
-            /* Climbing out of the day is a request for the run of days above
-               it, and "Daily" no longer means a fortnight of them, so the
-               control steps up with the crumb rather than contradicting it. */
-            if (!d.week && !d.day && grain === "daily") setGrain("weekly");
-            setDrill(d);
-          }}
-        />
+        <Breadcrumb drill={main.drill} onDrill={main.chooseDrill} />
 
         <p className="mb-4 text-[11px] text-faint">
-          {grainNote(view)}
-          {levelOf(view.grain) && " Click a bar to open it."}
+          {grainNote(main.view)}
+          {levelOf(main.view.grain) && " Click a bar to open it."}
         </p>
 
-        {tab === "dau" && <DauTab rows={dauRows} metric={dauMetric} view={view} />}
-        {tab === "notifications" && (
-          <NotificationsTab rows={notificationSectionRows} view={view} />
-        )}
+        {tab === "dau" && <DauTab rows={dauRows} metric={dauMetric} view={main.view} />}
         {tab === "engagement" && (
           <EngagementTab
             rows={interactionRows}
             metric={interactionMetric}
-            view={view}
+            view={main.view}
             section={section}
           />
         )}
         {tab === "publishing" && (
-          <PublishingTab view={view} contentType={contentType} section={section} />
+          <PublishingTab view={main.view} contentType={contentType} section={section} />
         )}
       </div>
 
@@ -680,7 +708,9 @@ export default function AudiencePage() {
         </Panel>
       </div>
 
-      <div className="mb-6 grid gap-5 lg:grid-cols-3">
+      {/* Permission used to sit in this row. It moved down to the notification
+          section, where the question it answers is being asked. */}
+      <div className="mb-6 grid gap-5 lg:grid-cols-2">
         <Panel title="By state" note="Where readers open the app.">
           <BarList rows={BY_STATE.map((r) => ({ name: r.name, value: r.users }))} />
         </Panel>
@@ -690,6 +720,59 @@ export default function AudiencePage() {
             tone="bg-violet"
           />
         </Panel>
+      </div>
+
+      {/* ── Notifications ─────────────────────────────────────────────── */}
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <div>
+          <div className="text-[11px] font-semibold tracking-[0.12em] text-faint uppercase">
+            Notifications
+          </div>
+          <h2 className="mt-1 text-xl font-extrabold">What was sent, and who opened it</h2>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Chip>Timezone: {TIMEZONE}</Chip>
+          <GhostButton onClick={() => setNonce((n) => n + 1)}>
+            <RefreshCw size={13} /> Refresh
+          </GhostButton>
+        </div>
+      </div>
+      <p className="mb-4 text-[12px] text-faint">
+        A push is the widest thing the desk does and the easiest to overuse, so
+        it gets its own section rather than a tab beside the reading figures.
+        Article and buzz notifications with delivery records only — custom
+        pushes without recipient records are excluded, because a send with no
+        denominator has no open rate.
+      </p>
+
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Sent" value={PUSH_SUMMARY.sent} icon={Send} tone="accent" />
+        <Stat label="Opened" value={PUSH_SUMMARY.opened} icon={BellRing} tone="mint" />
+        <Stat
+          label="Open rate"
+          value={`${PUSH_SUMMARY.openRate}%`}
+          hint="Of FCM-accepted recipients"
+          icon={Gauge}
+          tone="violet"
+        />
+        <Stat
+          label="Broadcasts"
+          value={NOTIFICATIONS.length}
+          hint={`Last ${WINDOW_DAYS} days`}
+          icon={Bell}
+          tone="amber"
+        />
+      </div>
+
+      <div className="mb-6 grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Panel
+            title="Open rate by send time"
+            note="Counted against the window a push went out in, not the one it was read in. Sent counts FCM-accepted recipients; the rate uses that same cohort and includes later opens."
+          >
+            <NotificationsSection rows={notificationSectionRows} push={push} />
+          </Panel>
+        </div>
         <Panel
           title="Notification permission"
           note="Undecided readers have never been asked, or dismissed the prompt."
@@ -704,6 +787,49 @@ export default function AudiencePage() {
           <p className="mt-4 text-[11px] leading-snug text-faint">
             Opt-in rate unavailable: notification permission is not recorded, and
             holding an FCM token is not consent.
+          </p>
+        </Panel>
+      </div>
+
+      <div className="mb-6">
+        <Panel
+          title="Recent broadcasts"
+          note="One row per send, newest first. The spread between a tight topical push and a broad one is the reason this is a list rather than an average."
+        >
+          <DataTable<NotificationRow>
+            rows={scope(NOTIFICATIONS, push.drill)}
+            rowKey={(r) => String(r.id)}
+            maxHeight={420}
+            /* A day with no send is the common case, not a failure — the desk
+               does not broadcast every day, and it should not read as one. */
+            empty="No push went out in this range."
+            columns={[
+              {
+                key: "title",
+                label: "Title",
+                render: (r) => <span className="line-clamp-2">{r.title}</span>,
+              },
+              { key: "type", label: "Notification type", render: (r) => r.type },
+              { key: "id", label: "Notification id", numeric: true, render: (r) => r.id },
+              {
+                key: "accepted",
+                label: "FCM accepted",
+                numeric: true,
+                render: (r) => fmt(r.fcmAccepted),
+              },
+              { key: "opened", label: "Opened", numeric: true, render: (r) => fmt(r.opened) },
+              {
+                key: "rate",
+                label: "Open rate (%)",
+                numeric: true,
+                render: (r) => r.openRate.toFixed(2),
+              },
+            ]}
+          />
+          <p className="mt-3 text-[12px] text-rose">
+            Unavailable: the app never reports that a push was opened, so every
+            open on this section is modelled. FCM accepted is the one column
+            that could be real today.
           </p>
         </Panel>
       </div>
@@ -1010,13 +1136,21 @@ function DauTab({
   );
 }
 
-function NotificationsTab({
+/**
+ * Open rate over time, with the resolution controls it needs to be read.
+ *
+ * Carries its own View switch and window filter rather than borrowing the
+ * tabbed card's, because it no longer sits inside that card: a control three
+ * screens above a chart is a control nobody knows is on.
+ */
+function NotificationsSection({
   rows,
-  view,
+  push,
 }: {
   rows: NotificationSectionRow[];
-  view: ViewState;
+  push: ReturnType<typeof useTimeView>;
 }) {
+  const { view } = push;
   const shown = scope(rows, view.drill);
   /* Open rate is a ratio, so it is rebuilt from the summed numerator and
      denominator at each resolution rather than averaged. Averaging the rate of
@@ -1029,56 +1163,44 @@ function NotificationsTab({
     value: p.value ? Math.round((opened[i].value / p.value) * 1000) / 10 : 0,
   }));
 
-  if (!shown.length) return <OutOfRange drill={view.drill} />;
-
   return (
     <>
-      <p className="mb-3 text-[12px] text-faint">
-        Article and buzz notifications with delivery records. Sent counts FCM
-        accepted recipients; open rate uses that same cohort and includes later
-        opens. Time sections use send time — custom pushes without recipient
-        records are excluded.
-      </p>
-      <AxisBarChart
-        labels={points.map((p) => p.label)}
-        values={points.map((p) => p.value)}
-        name="Open rate (%)"
-        format={(n) => `${Math.round(n * 100) / 100}`}
-        onSelect={selector(view, points, levelOf(view.grain))}
-      />
-      <div className="mt-4">
-        <DataTable<NotificationRow>
-          rows={scope(NOTIFICATIONS, view.drill)}
-          rowKey={(r) => String(r.id)}
-          maxHeight={420}
-          columns={[
-            {
-              key: "title",
-              label: "Title",
-              render: (r) => <span className="line-clamp-2">{r.title}</span>,
-            },
-            { key: "type", label: "Notification type", render: (r) => r.type },
-            { key: "id", label: "Notification id", numeric: true, render: (r) => r.id },
-            {
-              key: "accepted",
-              label: "FCM accepted",
-              numeric: true,
-              render: (r) => fmt(r.fcmAccepted),
-            },
-            { key: "opened", label: "Opened", numeric: true, render: (r) => fmt(r.opened) },
-            {
-              key: "rate",
-              label: "Open rate (%)",
-              numeric: true,
-              render: (r) => r.openRate.toFixed(2),
-            },
+      <div className="mt-3 mb-3 flex flex-wrap items-center gap-3">
+        <Segmented
+          label="View"
+          options={GRANULARITIES}
+          value={push.grain}
+          onChange={push.chooseGrain}
+        />
+        <Select
+          label="Send window"
+          value={push.section}
+          onChange={push.setSection}
+          options={[
+            { key: "all" as const, label: "All windows" },
+            ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
           ]}
         />
       </div>
-      <p className="mt-3 text-[12px] text-rose">
-        Opt-in rate unavailable: notification permission is not recorded, and an
-        FCM token is not consent.
+
+      <Breadcrumb drill={push.drill} onDrill={push.chooseDrill} />
+
+      <p className="mb-4 text-[11px] text-faint">
+        {grainNote(view)}
+        {levelOf(view.grain) && " Click a bar to open it."}
       </p>
+
+      {shown.length ? (
+        <AxisBarChart
+          labels={points.map((p) => p.label)}
+          values={points.map((p) => p.value)}
+          name="Open rate (%)"
+          format={(n) => `${Math.round(n * 100) / 100}`}
+          onSelect={selector(view, points, levelOf(view.grain))}
+        />
+      ) : (
+        <OutOfRange drill={view.drill} />
+      )}
     </>
   );
 }
