@@ -1243,6 +1243,50 @@ function RegionTotals({
   );
 }
 
+/**
+ * Collapses a day × window series to one row per day.
+ *
+ * The tables used to carry Day, Week and Time section beside every figure.
+ * Week is the Monday of the Day next to it and never distinguished two rows;
+ * the window did, which is why it cannot simply be deleted — six rows all
+ * reading the same date, differing only in numbers nothing explains, is worse
+ * than the column it replaced.
+ *
+ * So the rows are folded into days. Totals add and rates average, following
+ * the same rule the charts use: readers and events add across the windows of a
+ * day, while "cards per active user" and "seconds per active user" are already
+ * per-person figures and averaging is the only thing that keeps them true.
+ * Summing them would report a reader who spent six minutes as having spent
+ * half an hour.
+ *
+ * The windows themselves are still there to be read — the View control opens
+ * them, and that is the place for a question about them.
+ */
+function foldDays<T extends { day: string }>(
+  rows: T[],
+  sum: (keyof T)[],
+  mean: (keyof T)[]
+): T[] {
+  const byDay = new Map<string, T[]>();
+  for (const r of rows) byDay.set(r.day, [...(byDay.get(r.day) ?? []), r]);
+
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, group]) => {
+      const out = { ...group[0] } as T;
+      for (const k of sum) {
+        out[k] = group.reduce((a, r) => a + (r[k] as number), 0) as T[keyof T];
+      }
+      for (const k of mean) {
+        const avg = group.reduce((a, r) => a + (r[k] as number), 0) / group.length;
+        // Kept to two places: these are rates, and a rate printed to nine
+        // decimals is noise pretending to be precision.
+        out[k] = (Math.round(avg * 100) / 100) as T[keyof T];
+      }
+      return out;
+    });
+}
+
 function DauTab({
   rows,
   metric,
@@ -1317,12 +1361,14 @@ function DauTab({
       {!compare && (
       <div className="mt-4">
         <DataTable<DauRow>
-          rows={shown}
-          rowKey={(r) => r.day + r.section}
+          rows={foldDays(
+            shown,
+            ["registeredDau", "sessions", "cardsSwiped", "rightSwipes"],
+            ["cardsPerActive", "secondsPerActive"]
+          )}
+          rowKey={(r) => r.day}
           columns={[
             { key: "day", label: "Day", render: (r) => r.day },
-            { key: "week", label: "Week", render: (r) => r.week },
-            { key: "section", label: "Time section", render: (r) => r.section },
             {
               key: "dau",
               label: "Registered DAU",
@@ -1533,12 +1579,16 @@ function EngagementTab({
           {!compare && (
           <div className="mt-4">
             <DataTable<InteractionRow>
-              rows={shown}
-              rowKey={(r) => r.day + r.section}
+              /* All counted events, so every column adds across the day's
+                 windows — there is no rate here to average. */
+              rows={foldDays(
+                shown,
+                ["views", "likes", "comments", "shares", "saves", "aiQuestions", "sourceTaps"],
+                []
+              )}
+              rowKey={(r) => r.day}
               columns={[
                 { key: "day", label: "Day", render: (r) => r.day },
-                { key: "week", label: "Week", render: (r) => r.week },
-                { key: "section", label: "Time section", render: (r) => r.section },
                 { key: "views", label: "Views", numeric: true, render: (r) => fmt(r.views) },
                 { key: "likes", label: "Likes", numeric: true, render: (r) => fmt(r.likes) },
                 {
@@ -1897,7 +1947,6 @@ function PublishingTab({
           rowKey={(r, i) => `${r.day}-${r.contentType}-${r.category}-${i}`}
           columns={[
             { key: "day", label: "Day", render: (r) => r.day },
-            { key: "week", label: "Week", render: (r) => r.week },
             {
               key: "type",
               label: "Content type",
