@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronDown } from "lucide-react";
 import { fmt } from "@/components/StatsStrip";
 
 /* Chart parts, drawn by hand.
@@ -846,6 +847,158 @@ export function Select<K extends string>({
   );
 }
 
+/**
+ * A dropdown that can hold more than one answer.
+ *
+ * The native `select` cannot do this — `multiple` renders a scrolling list box,
+ * not a menu — so this is a button and a panel. It stays close to `Select`
+ * deliberately: same label, same trigger, so a row of controls does not read as
+ * two different kinds of thing.
+ *
+ * The button says what is chosen rather than how many, until there are too many
+ * to name. "Kerala, Punjab" answers the question the control was asked; "2
+ * selected" makes the reader open it again to find out.
+ */
+export function MultiSelect({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+  emptyLabel,
+  toneOf,
+  max,
+}: {
+  label: string;
+  options: { key: string; label: string; hint?: string }[];
+  selected: string[];
+  onToggle: (key: string) => void;
+  onClear: () => void;
+  /** What the trigger reads when nothing is picked. */
+  emptyLabel: string;
+  /** The series colour a pick has been given, so menu and chart agree. */
+  toneOf?: (key: string) => string;
+  max?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const atMax = max !== undefined && selected.length >= max;
+  const labelOf = (k: string) => options.find((o) => o.key === k)?.label ?? k;
+
+  /* Outside click and Escape both close it. Bound only while open, so the page
+     is not carrying a document listener per dropdown for the whole session. */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const summary =
+    selected.length === 0
+      ? emptyLabel
+      : selected.length <= 2
+        ? selected.map(labelOf).join(", ")
+        : `${selected.length} selected`;
+
+  return (
+    <div className="flex items-center gap-2 text-[12px] font-semibold text-muted">
+      {label}
+      <div className="relative" ref={box}>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          className="flex min-w-[160px] cursor-pointer items-center justify-between gap-2 rounded-xl border border-line bg-card px-3 py-2 text-[13px] font-semibold text-ink outline-none focus:border-accent"
+        >
+          <span className="flex items-center gap-1.5 truncate">
+            {selected.length > 0 && toneOf && (
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${toneOf(selected[0]).replace("fill-", "bg-")}`}
+              />
+            )}
+            {summary}
+          </span>
+          <ChevronDown size={14} className="shrink-0 text-faint" />
+        </button>
+
+        {open && (
+          <div
+            role="listbox"
+            aria-multiselectable
+            className="absolute z-30 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-(--shadow-pop)"
+          >
+            <button
+              type="button"
+              role="option"
+              aria-selected={selected.length === 0}
+              onClick={onClear}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-semibold text-ink hover:bg-canvas"
+            >
+              <span className="w-4 shrink-0 text-accent">
+                {selected.length === 0 ? <Check size={14} /> : null}
+              </span>
+              {emptyLabel}
+            </button>
+
+            <div className="my-1 border-t border-line" />
+
+            {options.map((o) => {
+              const on = selected.includes(o.key);
+              /* At the cap the rest go quiet rather than disappearing — a menu
+                 that shrinks as you use it is disorienting, and the reason is
+                 easier to work out when the options are still there. */
+              const blocked = !on && atMax;
+              return (
+                <button
+                  key={o.key}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  disabled={blocked}
+                  onClick={() => onToggle(o.key)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-semibold ${
+                    blocked
+                      ? "cursor-not-allowed text-faint"
+                      : "cursor-pointer text-ink hover:bg-canvas"
+                  }`}
+                >
+                  <span className="w-4 shrink-0">
+                    {on &&
+                      (toneOf ? (
+                        <span
+                          className={`block h-2.5 w-2.5 rounded-full ${toneOf(o.key).replace("fill-", "bg-")}`}
+                        />
+                      ) : (
+                        <Check size={14} className="text-accent" />
+                      ))}
+                  </span>
+                  <span className="truncate">{o.label}</span>
+                  {o.hint && (
+                    <span className="ml-auto shrink-0 text-[11px] font-medium text-faint">
+                      {o.hint}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** The bordered secondary button in the control rows. */
 export function GhostButton({
   children,
@@ -869,88 +1022,3 @@ export function GhostButton({
   );
 }
 
-/**
- * A multi-select built from toggles, which is also the comparison control.
- *
- * One selection filters, two or more compare — there is no separate "compare"
- * mode to turn on, because the moment a second region is chosen the only
- * sensible reading of the request is "against the first". Nothing selected
- * means everywhere, so the way back to the whole picture is to clear it rather
- * than to find an "All" entry hiding among thirty place names.
- *
- * Colours come from the caller, so the swatch here is the same colour as that
- * series in the chart below. A legend that has to be matched up by reading is
- * not a legend.
- */
-export function TogglePills<K extends string>({
-  options,
-  selected,
-  onToggle,
-  onClear,
-  emptyLabel,
-  toneOf,
-  max,
-}: {
-  options: { key: K; label: string; hint?: string }[];
-  selected: K[];
-  onToggle: (k: K) => void;
-  onClear: () => void;
-  /** Shown as the first pill, selected when nothing else is. */
-  emptyLabel: string;
-  /** Series colour for a selected key, so pill and chart agree. */
-  toneOf?: (k: K) => string;
-  /** Beyond this, further options are disabled rather than hidden. */
-  max?: number;
-}) {
-  const atLimit = max !== undefined && selected.length >= max;
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={onClear}
-        aria-pressed={selected.length === 0}
-        className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-          selected.length === 0
-            ? "border-violet bg-violet text-white"
-            : "border-line text-muted hover:text-ink"
-        }`}
-      >
-        {emptyLabel}
-      </button>
-
-      {options.map((o) => {
-        const on = selected.includes(o.key);
-        // Disabled only when it would add to a full set — never when it is
-        // already chosen, or the last one in could not be taken out again.
-        const blocked = atLimit && !on;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => onToggle(o.key)}
-            disabled={blocked}
-            aria-pressed={on}
-            title={
-              blocked
-                ? `Comparing ${max} at once is the limit — remove one first`
-                : o.hint
-            }
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-              on
-                ? "border-transparent bg-canvas text-ink"
-                : "border-line text-muted hover:text-ink"
-            } ${blocked ? "cursor-not-allowed opacity-40" : ""}`}
-          >
-            {on && toneOf && (
-              <span
-                className={`h-2 w-2 rounded-sm ${toneOf(o.key).replace("fill-", "bg-")}`}
-              />
-            )}
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}

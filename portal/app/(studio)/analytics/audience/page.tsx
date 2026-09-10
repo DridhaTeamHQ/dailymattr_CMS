@@ -31,7 +31,7 @@ import {
   Panel,
   PillTabs,
   Segmented,
-  TogglePills,
+  MultiSelect,
   Select,
   SplitBar,
   Stat,
@@ -1329,17 +1329,11 @@ function RegionFilter({
             onKeys([]);
           }}
         />
-        <span className="text-[11px] text-faint">
-          {keys.length === 0
-            ? "Showing everywhere. Pick one to filter, or two for a comparison."
-            : keys.length === 1
-              ? "Filtered to one " + scope + "."
-              : `Comparing ${keys.length} ${scope === "state" ? "states" : "cities"}.`}
-        </span>
-      </div>
-
-      <div className="mt-3">
-        <TogglePills
+        {/* Thirty-six cities laid out as pills was three wrapped rows of chrome
+            above every chart on the tab. The same choice folds into a menu,
+            and the sentence beside it still says what the charts are doing. */}
+        <MultiSelect
+          label={scope === "state" ? "State" : "City"}
           options={options.map((r: Region) => ({
             key: r.key,
             label: r.name,
@@ -1354,7 +1348,43 @@ function RegionFilter({
           toneOf={toneOf}
           max={MAX_COMPARE}
         />
+
+        <span className="text-[11px] text-faint">
+          {keys.length === 0
+            ? `Showing everywhere. Pick one to filter, or up to ${MAX_COMPARE} to compare.`
+            : keys.length === 1
+              ? "Filtered to one " + scope + "."
+              : `Comparing ${keys.length} ${scope === "state" ? "states" : "cities"}.`}
+        </span>
       </div>
+
+      {/* The picks stay visible with the menu shut, in their series colours,
+          so the legend on the chart below has something to agree with. */}
+      {keys.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {keys.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onKeys(keys.filter((x) => x !== k))}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[11px] font-bold hover:bg-canvas"
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${toneOf(k).replace("fill-", "bg-")}`}
+              />
+              {regionByKey(k)?.name ?? k}
+              <span className="text-faint">×</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => onKeys([])}
+            className="cursor-pointer text-[11px] font-bold text-accent"
+          >
+            Clear
+          </button>
+        </div>
+      )}
     </div>
   );
 }
