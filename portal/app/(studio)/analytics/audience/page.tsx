@@ -854,13 +854,12 @@ export default function AudiencePage() {
         </div>
         <Panel
           title="Notification permission"
-          note="Undecided readers have never been asked, or dismissed the prompt."
+          note="Every install is one or the other — a reader who has not turned notifications on is off."
         >
           <SplitBar
             parts={[
               { name: "On", value: PUSH_SUMMARY.optIn, tone: "bg-mint" },
               { name: "Off", value: PUSH_SUMMARY.denied, tone: "bg-rose" },
-              { name: "Undecided", value: PUSH_SUMMARY.undecided, tone: "bg-faint" },
             ]}
           />
           <p className="mt-4 text-[11px] leading-snug text-faint">

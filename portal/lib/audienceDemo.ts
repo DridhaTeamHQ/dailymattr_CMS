@@ -375,10 +375,12 @@ export const PUSH_SUMMARY = {
   sent: pushSent,
   opened: pushOpened,
   openRate: Math.round((pushOpened / pushSent) * 1000) / 10,
+  /* Two states, not three. There is no "not asked yet" in the app — a reader
+     either has notifications on or does not — so the share that used to sit
+     under "undecided" is off: not having turned them on is off. */
   /** Share of installs with notifications left on. */
   optIn: 63.8,
-  denied: 21.4,
-  undecided: 14.8,
+  denied: 36.2,
 };
 
 export interface NotificationSectionRow {
