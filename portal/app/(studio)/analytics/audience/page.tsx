@@ -490,7 +490,7 @@ export default function AudiencePage() {
       </div>
 
       {/* ── KPI row ───────────────────────────────────────────────────── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Total users"
           value={KPI.totalUsers}
@@ -511,19 +511,6 @@ export default function AudiencePage() {
           icon={Clock}
           tone="amber"
           hint="Overall session volume recorded."
-        />
-        <KpiCard
-          label="Audio adoption"
-          value={`${KPI.audioAdoption}%`}
-          icon={Headphones}
-          tone="mint"
-          hint="Share of users activating audio playback."
-          extra={
-            <>
-              <Chip>Overall users: {fmt(KPI.audioUsersOverall)}</Chip>
-              <Chip>Today users: {fmt(KPI.audioUsersToday)}</Chip>
-            </>
-          }
         />
         <KpiCard
           label="Avg session duration"
