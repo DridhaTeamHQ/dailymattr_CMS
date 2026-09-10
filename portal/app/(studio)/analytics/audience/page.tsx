@@ -59,6 +59,7 @@ import {
   PRODUCT_ENGAGEMENT,
   PRODUCT_LABEL,
   PUBLISHING_ROWS,
+  PUSH_BY_CATEGORY,
   PUSH_CATEGORIES,
   PUSH_SUMMARY,
   RATING,
@@ -77,6 +78,7 @@ import {
   type ContentType,
   type Product,
   type ProductEngagement,
+  type PushCategoryRow,
   type PublishingRow,
   type TimeSection,
   type TraxRow,
@@ -869,6 +871,69 @@ export default function AudiencePage() {
         </Panel>
       </div>
 
+      {/* ── By topic ─────────────────────────────────────────────────────
+          Two questions the desk asks separately: what it is pushing, and what
+          readers open. Both are drawn, side by side, because ranking topics by
+          volume and reading that as performance is the easy mistake — the two
+          orderings are free to disagree, and a topic pushed once a fortnight
+          can out-open one pushed weekly. */}
+      <div className="mb-6">
+        <Panel
+          title="Topics pushed, and topics opened"
+          note={`Every push in the last ${WINDOW_DAYS} days, grouped by the topic it was filed under. The whole audience and every region — the controls above narrow the chart, not this.`}
+        >
+          <div className="grid gap-8 lg:grid-cols-2 lg:gap-16">
+            <div>
+              <h3 className="mb-3 text-[12px] font-bold text-faint">
+                Pushes sent — distinct stories
+              </h3>
+              <BarList
+                rows={PUSH_BY_CATEGORY.map((r) => ({ name: r.category, value: r.pushes }))}
+              />
+            </div>
+            <div>
+              <h3 className="mb-3 text-[12px] font-bold text-faint">
+                Opened — readers who tapped through
+              </h3>
+              <BarList
+                rows={PUSH_BY_CATEGORY.map((r) => ({ name: r.category, value: r.opened }))}
+                tone="bg-mint"
+              />
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <DataTable<PushCategoryRow>
+              rows={PUSH_BY_CATEGORY}
+              rowKey={(r) => r.category}
+              columns={[
+                { key: "category", label: "Topic", render: (r) => r.category },
+                { key: "pushes", label: "Pushes", numeric: true, render: (r) => r.pushes },
+                {
+                  key: "perDay",
+                  label: "Per day",
+                  numeric: true,
+                  render: (r) => r.perDay.toFixed(2),
+                },
+                { key: "sent", label: "Sent", numeric: true, render: (r) => fmt(r.sent) },
+                { key: "opened", label: "Opened", numeric: true, render: (r) => fmt(r.opened) },
+                {
+                  key: "rate",
+                  label: "Open rate (%)",
+                  numeric: true,
+                  render: (r) => r.openRate.toFixed(2),
+                },
+              ]}
+            />
+          </div>
+          <p className="mt-3 text-[11px] leading-snug text-faint">
+            Per day is over the whole {WINDOW_DAYS}-day window, so a topic pushed
+            once reads as {(1 / WINDOW_DAYS).toFixed(2)} rather than as a day
+            with one push and thirteen without.
+          </p>
+        </Panel>
+      </div>
+
       <div className="mb-6">
         <Panel
           title="Recent pushes"
@@ -888,6 +953,7 @@ export default function AudiencePage() {
                 render: (r) => <span className="line-clamp-2">{r.title}</span>,
               },
               { key: "type", label: "Notification type", render: (r) => r.type },
+              { key: "category", label: "Topic", render: (r) => r.category },
               { key: "id", label: "Notification id", numeric: true, render: (r) => r.id },
               {
                 key: "accepted",

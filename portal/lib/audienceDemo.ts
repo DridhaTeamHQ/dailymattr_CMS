@@ -383,6 +383,52 @@ export const PUSH_SUMMARY = {
   denied: 36.2,
 };
 
+/** One topic's push record over the window: what went out, and what landed. */
+export interface PushCategoryRow {
+  category: string;
+  /** Broadcasts — distinct stories pushed, not recipients. */
+  pushes: number;
+  /** Those broadcasts over the days in the window. Below 1 for most topics. */
+  perDay: number;
+  /** FCM-accepted recipients across those broadcasts. */
+  sent: number;
+  opened: number;
+  openRate: number;
+}
+
+/**
+ * The two questions about a topic, side by side: how often the desk pushes it,
+ * and how well those pushes are opened.
+ *
+ * They are not the same question and they do not have to agree — a topic can
+ * be pushed twice as often and opened half as well, which is the case for
+ * saying both rather than ranking topics by volume and calling it performance.
+ *
+ * The rate is rebuilt from the summed numerator and denominator, never from
+ * averaging the per-send rates: a topic with one 30k send and one 200 send
+ * would otherwise report the small one as half its performance.
+ */
+export const PUSH_BY_CATEGORY: PushCategoryRow[] = (() => {
+  const acc = new Map<string, { pushes: number; sent: number; opened: number }>();
+  for (const n of NOTIFICATIONS) {
+    const cur = acc.get(n.category) ?? { pushes: 0, sent: 0, opened: 0 };
+    cur.pushes += 1;
+    cur.sent += n.fcmAccepted;
+    cur.opened += n.opened;
+    acc.set(n.category, cur);
+  }
+  return [...acc.entries()]
+    .map(([category, v]) => ({
+      category,
+      pushes: v.pushes,
+      perDay: Math.round((v.pushes / WINDOW_DAYS) * 100) / 100,
+      sent: v.sent,
+      opened: v.opened,
+      openRate: v.sent ? Math.round((v.opened / v.sent) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.pushes - a.pushes || b.openRate - a.openRate);
+})();
+
 export interface NotificationSectionRow {
   day: string;
   week: string;
@@ -1122,11 +1168,7 @@ export function interactionRowsForRegion(key: string | null): InteractionRow[] {
  * and offering them as filters would mean seven of the menu's entries emptying
  * the chart with no way to tell "nothing was sent" from "something is broken".
  */
-export const PUSH_CATEGORIES: string[] = (() => {
-  const count = new Map<string, number>();
-  for (const n of NOTIFICATIONS) count.set(n.category, (count.get(n.category) ?? 0) + 1);
-  return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c]) => c);
-})();
+export const PUSH_CATEGORIES: string[] = PUSH_BY_CATEGORY.map((r) => r.category);
 
 /**
  * Open rate by send window, narrowed to one region and/or one topic.
