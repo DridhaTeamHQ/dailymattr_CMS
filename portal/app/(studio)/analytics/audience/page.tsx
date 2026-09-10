@@ -483,7 +483,8 @@ export default function AudiencePage() {
               <Chip>Audio scope: Overall</Chip>
               <Chip>
                 Active filters:{" "}
-                {(section === "all" ? 0 : 1) + (push.section === "all" ? 0 : 1)}
+                {(section === "all" || tab === "publishing" ? 0 : 1) +
+                  (push.section === "all" ? 0 : 1)}
               </Chip>
             </div>
           </div>
@@ -592,15 +593,22 @@ export default function AudiencePage() {
             onChange={main.chooseGrain}
           />
 
-          <Select
-            label="Time section"
-            value={section}
-            onChange={main.setSection}
-            options={[
-              { key: "all" as const, label: "All sections" },
-              ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
-            ]}
-          />
+          {/* Publishing has no reading windows to filter by — an item is filed
+              on a day, not at an hour — so the control is not offered there
+              rather than offered and then ignored. The chosen window is kept,
+              not cleared: coming back to the reading tabs should find the page
+              where it was left. */}
+          {tab !== "publishing" && (
+            <Select
+              label="Time section"
+              value={section}
+              onChange={main.setSection}
+              options={[
+                { key: "all" as const, label: "All sections" },
+                ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
+              ]}
+            />
+          )}
 
           {tab === "publishing" && (
             <Select
@@ -687,7 +695,6 @@ export default function AudiencePage() {
           <PublishingTab
             view={main.view}
             contentType={contentType}
-            section={section}
             series={regionSeries}
           />
         )}
@@ -1877,12 +1884,10 @@ function EngagementTab({
 function PublishingTab({
   view,
   contentType,
-  section,
   series,
 }: {
   view: ViewState;
   contentType: ContentType | "all";
-  section: TimeSection | "all";
   series: RegionSeries[];
 }) {
   /* One region narrows the library to what was filed for it; several leave
@@ -2004,14 +2009,6 @@ function PublishingTab({
               : "by day"}
         . Counts every
         item that reached readers across all seven products.
-        {section !== "all" && (
-          <span className="text-amber">
-            {" "}
-            Time sections do not apply here — an item is filed on a day, not in a
-            reading window, so this chart ignores that filter rather than
-            returning nothing.
-          </span>
-        )}
       </p>
       {cityNote && (
         <p className="mb-3 text-[12px] text-amber">{cityNote}</p>
