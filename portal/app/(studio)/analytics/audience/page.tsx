@@ -31,6 +31,7 @@ import {
   Panel,
   PillTabs,
   Segmented,
+  TogglePills,
   Select,
   SplitBar,
   Stat,
@@ -46,12 +47,10 @@ import {
   CONTENT_TYPES,
   CONTENT_TYPE_LABEL,
   COVERAGE,
-  DAU_ROWS,
   DAY_LABELS,
   EDITOR_ROWS,
   EDITORIAL,
   HEATMAP,
-  INTERACTION_ROWS,
   KPI,
   LATEST_DAY,
   LATEST_WEEK,
@@ -82,6 +81,13 @@ import {
   type PublishingRow,
   type TimeSection,
   type TraxRow,
+  regionsForScope,
+  regionByKey,
+  dauRowsForRegion,
+  interactionRowsForRegion,
+  publishingRowsForRegion,
+  type Region,
+  type RegionScope,
 } from "@/lib/audienceDemo";
 
 /* The audience side of analytics.
@@ -349,21 +355,30 @@ export default function AudiencePage() {
   /** Bumping this re-mounts the section, which is what "Refresh" means here. */
   const [nonce, setNonce] = useState(0);
 
+  /* One region filter for the whole section. Empty is everywhere; one filters;
+     two or more compare. Held here rather than per tab so switching tabs keeps
+     the question you were asking. */
+  const [regionScope, setRegionScope] = useState<RegionScope>("state");
+  const [regionKeys, setRegionKeys] = useState<string[]>([]);
+
   const section = main.section;
 
-  /* Inlined per list rather than shared through a helper: a function defined
-     in the component body is a new reference every render, so a memo that
-     closed over one would either lie about its dependencies or never hit. */
+  const regionSeries = useMemo(() => seriesFor(regionKeys), [regionKeys]);
+  /* One selection narrows the whole section to that region. Two or more leave
+     these on the national figures — the chart draws a series per region and the
+     table steps aside, so what these feed is the axis and the labels. */
+  const primaryRegion = regionKeys.length === 1 ? regionKeys[0] : null;
+
+  /* bySection is module-level, so a memo can depend on it honestly — a helper
+     defined in the component body would be a new reference every render, and
+     the memo would either lie about its dependencies or never hit. */
   const dauRows = useMemo(
-    () => (section === "all" ? DAU_ROWS : DAU_ROWS.filter((r) => r.section === section)),
-    [section]
+    () => bySection(dauRowsForRegion(primaryRegion), section),
+    [section, primaryRegion]
   );
   const interactionRows = useMemo(
-    () =>
-      section === "all"
-        ? INTERACTION_ROWS
-        : INTERACTION_ROWS.filter((r) => r.section === section),
-    [section]
+    () => bySection(interactionRowsForRegion(primaryRegion), section),
+    [section, primaryRegion]
   );
   /** Notifications read their own window filter, not the tabbed card's. */
   const notificationSectionRows = useMemo(
@@ -530,7 +545,8 @@ export default function AudiencePage() {
             : "Uses the performance window below; defaults to the last " +
               WINDOW_DAYS +
               " days."}{" "}
-          Timezone: {TIMEZONE}.
+          Timezone: {TIMEZONE}. The region filter below applies to every chart
+          in this card.
         </p>
 
         <PillTabs tabs={TABS} value={tab} onChange={setTab} />
@@ -603,24 +619,47 @@ export default function AudiencePage() {
           </GhostButton>
         </div>
 
-        <Breadcrumb drill={main.drill} onDrill={main.chooseDrill} />
+        <RegionFilter
+          scope={regionScope}
+          onScope={setRegionScope}
+          keys={regionKeys}
+          onKeys={setRegionKeys}
+        />
+
+        <div className="mt-4">
+          <Breadcrumb drill={main.drill} onDrill={main.chooseDrill} />
+        </div>
 
         <p className="mb-4 text-[11px] text-faint">
           {grainNote(main.view)}
           {levelOf(main.view.grain) && " Click a bar to open it."}
         </p>
 
-        {tab === "dau" && <DauTab rows={dauRows} metric={dauMetric} view={main.view} />}
+        {tab === "dau" && (
+          <DauTab
+            rows={dauRows}
+            metric={dauMetric}
+            view={main.view}
+            series={regionSeries}
+            sectionFilter={section}
+          />
+        )}
         {tab === "engagement" && (
           <EngagementTab
             rows={interactionRows}
             metric={interactionMetric}
             view={main.view}
             section={section}
+            series={regionSeries}
           />
         )}
         {tab === "publishing" && (
-          <PublishingTab view={main.view} contentType={contentType} section={section} />
+          <PublishingTab
+            view={main.view}
+            contentType={contentType}
+            section={section}
+            series={regionSeries}
+          />
         )}
       </div>
 
@@ -1041,10 +1080,175 @@ const DAU_AGG: Record<string, { day?: "sum" | "mean"; week?: "sum" | "mean" }> =
   secondsPerActive: { day: "mean", week: "mean" },
 };
 
+/* ── Where the numbers are from ────────────────────────────────────────────
+ *
+ * One filter for the whole section, because the question "how is Kerala
+ * doing" is not a question about one chart. Nothing selected is everywhere;
+ * one is a filter; two or more is a comparison, which is why there is no
+ * separate compare switch to find.
+ */
+
+/** Series colours, in the order regions are added. */
+const REGION_TONES = [
+  "fill-accent",
+  "fill-violet",
+  "fill-mint",
+  "fill-amber",
+  "fill-rose",
+] as const;
+
+/** Beyond five the bars are too thin to read and the legend wraps twice. */
+const MAX_COMPARE = REGION_TONES.length;
+
+interface RegionSeries {
+  /** Null for the national figures. */
+  key: string | null;
+  name: string;
+  tone: string;
+}
+
+/** What the section is currently showing: one entry, or one per region. */
+function seriesFor(keys: string[]): RegionSeries[] {
+  if (!keys.length) return [{ key: null, name: "Overall", tone: REGION_TONES[0] }];
+  return keys.map((key, i) => ({
+    key,
+    name: regionByKey(key)?.name ?? key,
+    tone: REGION_TONES[i % REGION_TONES.length],
+  }));
+}
+
+/** The picker, and the sentence saying what it is doing. */
+function RegionFilter({
+  scope,
+  onScope,
+  keys,
+  onKeys,
+}: {
+  scope: RegionScope;
+  onScope: (s: RegionScope) => void;
+  keys: string[];
+  onKeys: (k: string[]) => void;
+}) {
+  const options = regionsForScope(scope);
+  const tones = seriesFor(keys);
+  const toneOf = (k: string) => tones.find((t) => t.key === k)?.tone ?? REGION_TONES[0];
+
+  return (
+    <div className="mt-4 rounded-2xl border border-line p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented
+          label="Region"
+          options={[
+            { key: "state" as const, label: "States" },
+            { key: "city" as const, label: "Cities" },
+          ]}
+          value={scope}
+          /* Selections are dropped on a scope change rather than carried:
+             comparing Kerala with Bengaluru is a chart with no shared
+             denominator, and quietly keeping half a selection is worse than
+             asking for it again. */
+          onChange={(s) => {
+            onScope(s);
+            onKeys([]);
+          }}
+        />
+        <span className="text-[11px] text-faint">
+          {keys.length === 0
+            ? "Showing everywhere. Pick one to filter, or two for a comparison."
+            : keys.length === 1
+              ? "Filtered to one " + scope + "."
+              : `Comparing ${keys.length} ${scope === "state" ? "states" : "cities"}.`}
+        </span>
+      </div>
+
+      <div className="mt-3">
+        <TogglePills
+          options={options.map((r: Region) => ({
+            key: r.key,
+            label: r.name,
+            hint: r.scope === "city" ? r.state : undefined,
+          }))}
+          selected={keys}
+          onToggle={(k) =>
+            onKeys(keys.includes(k) ? keys.filter((x) => x !== k) : [...keys, k])
+          }
+          onClear={() => onKeys([])}
+          emptyLabel="Overall"
+          toneOf={toneOf}
+          max={MAX_COMPARE}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The same section filter the page applies, reused per region when comparing. */
+function bySection<T extends { section: TimeSection }>(
+  rows: T[],
+  section: TimeSection | "all"
+): T[] {
+  return section === "all" ? rows : rows.filter((r) => r.section === section);
+}
+
+/**
+ * The totals behind a comparison.
+ *
+ * The per-row table is dropped while comparing — five regions across a
+ * fortnight of windows is a few hundred rows, and nobody reads that to answer
+ * "which is bigger". This says it in one line each, with the share so the
+ * ranking is not just a column of numbers to subtract by eye.
+ */
+function RegionTotals({
+  series,
+  label,
+  totals,
+}: {
+  series: RegionSeries[];
+  label: string;
+  totals: number[];
+}) {
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const top = Math.max(...totals, 1);
+  return (
+    <div className="mt-4 rounded-2xl border border-line p-4">
+      <div className="mb-3 text-[11px] font-semibold tracking-[0.12em] text-faint uppercase">
+        {label} over the period shown
+      </div>
+      <div className="space-y-2">
+        {series.map((sr, i) => (
+          <div key={sr.key ?? "all"} className="flex items-center gap-3">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${sr.tone.replace("fill-", "bg-")}`} />
+            <span className="w-40 shrink-0 truncate text-[12px] font-semibold">
+              {sr.name}
+            </span>
+            <span className="h-2 flex-1 overflow-hidden rounded-full bg-canvas">
+              <span
+                className={`block h-full rounded-full ${sr.tone.replace("fill-", "bg-")}`}
+                style={{ width: `${(totals[i] / top) * 100}%` }}
+              />
+            </span>
+            <span className="w-20 shrink-0 text-right text-[12px] font-extrabold tabular-nums">
+              {fmt(totals[i])}
+            </span>
+            <span className="w-12 shrink-0 text-right text-[11px] text-faint tabular-nums">
+              {sum ? `${Math.round((totals[i] / sum) * 100)}%` : "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-faint">
+        Share is of the regions being compared, not of the country.
+      </p>
+    </div>
+  );
+}
+
 function DauTab({
   rows,
   metric,
   view,
+  series,
+  sectionFilter,
 }: {
   rows: DauRow[];
   metric: keyof Pick<
@@ -1052,12 +1256,30 @@ function DauTab({
     "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
   >;
   view: ViewState;
+  series: RegionSeries[];
+  sectionFilter: TimeSection | "all";
 }) {
   /* The table follows the chart into the opened bar: reading a week off the
      chart and then hunting for it in a fortnight of rows is the thing the
      drill-down is meant to remove. */
   const shown = scope(rows, view.drill);
   const points = bucket(shown, view.grain, (r) => r[metric] as number, DAU_AGG[metric]);
+
+  /* Each region bucketed the same way as the chart above, so the bars line up
+     against one axis and one set of labels. */
+  const compare = series.length > 1;
+  const grouped = compare
+    ? series.map((s) => ({
+        name: s.name,
+        tone: s.tone,
+        values: bucket(
+          scope(bySection(dauRowsForRegion(s.key), sectionFilter), view.drill),
+          view.grain,
+          (r) => r[metric] as number,
+          DAU_AGG[metric]
+        ).map((p) => p.value),
+      }))
+    : [];
 
   if (!shown.length) return <OutOfRange drill={view.drill} />;
 
@@ -1068,12 +1290,31 @@ function DauTab({
         section. Sessions are counted where they opened, so a reader who comes
         back after lunch is one reader and two sessions.
       </p>
-      <AxisBarChart
-        labels={points.map((p) => p.label)}
-        values={points.map((p) => p.value)}
-        name={DAU_LABEL[metric]}
-        onSelect={selector(view, points, levelOf(view.grain))}
-      />
+      {compare ? (
+        <GroupedAxisChart
+          labels={points.map((p) => p.label)}
+          series={grouped}
+          onSelect={selector(view, points, levelOf(view.grain))}
+        />
+      ) : (
+        <AxisBarChart
+          labels={points.map((p) => p.label)}
+          values={points.map((p) => p.value)}
+          name={DAU_LABEL[metric]}
+          onSelect={selector(view, points, levelOf(view.grain))}
+        />
+      )}
+      {compare && (
+        <RegionTotals
+          series={series}
+          label={DAU_LABEL[metric]}
+          totals={grouped.map((g) => g.values.reduce((a, b) => a + b, 0))}
+        />
+      )}
+      {/* Dropped while comparing: the same fortnight of windows once per region
+          is a few hundred rows, and the totals above already answer the
+          question that made someone pick two regions. */}
+      {!compare && (
       <div className="mt-4">
         <DataTable<DauRow>
           rows={shown}
@@ -1115,6 +1356,7 @@ function DauTab({
           ]}
         />
       </div>
+      )}
       <p className="mt-3 text-[12px] text-rose">
         Unavailable: right-swipe direction is not recorded — the figures in that
         column are modelled, not counted.
@@ -1209,6 +1451,7 @@ function EngagementTab({
   metric,
   view,
   section,
+  series,
 }: {
   rows: InteractionRow[];
   metric: keyof Pick<
@@ -1217,6 +1460,7 @@ function EngagementTab({
   >;
   view: ViewState;
   section: TimeSection | "all";
+  series: RegionSeries[];
 }) {
   /** Which product the panels at the bottom are about. */
   const [product, setProduct] = useState<Product>("article");
@@ -1224,6 +1468,19 @@ function EngagementTab({
   const shown = scope(rows, view.drill);
   /* All of these are counted events, so they add at every resolution. */
   const points = bucket(shown, view.grain, (r) => r[metric] as number);
+
+  const compare = series.length > 1;
+  const grouped = compare
+    ? series.map((sr) => ({
+        name: sr.name,
+        tone: sr.tone,
+        values: bucket(
+          scope(bySection(interactionRowsForRegion(sr.key), section), view.drill),
+          view.grain,
+          (r) => r[metric] as number
+        ).map((pt) => pt.value),
+      }))
+    : [];
 
   const ranked = useMemo(
     () => [...PRODUCT_ENGAGEMENT].sort((a, b) => actionsOf(b) - actionsOf(a)),
@@ -1252,12 +1509,28 @@ function EngagementTab({
             Likes, shares, comments and saves across every product. AI questions
             count user messages sent to the news and buzz chats.
           </p>
-          <AxisBarChart
-            labels={points.map((p) => p.label)}
-            values={points.map((p) => p.value)}
-            name={INTERACTION_LABEL[metric]}
-            onSelect={selector(view, points, levelOf(view.grain))}
-          />
+          {compare ? (
+            <GroupedAxisChart
+              labels={points.map((p) => p.label)}
+              series={grouped}
+              onSelect={selector(view, points, levelOf(view.grain))}
+            />
+          ) : (
+            <AxisBarChart
+              labels={points.map((p) => p.label)}
+              values={points.map((p) => p.value)}
+              name={INTERACTION_LABEL[metric]}
+              onSelect={selector(view, points, levelOf(view.grain))}
+            />
+          )}
+          {compare && (
+            <RegionTotals
+              series={series}
+              label={INTERACTION_LABEL[metric]}
+              totals={grouped.map((g) => g.values.reduce((a, b) => a + b, 0))}
+            />
+          )}
+          {!compare && (
           <div className="mt-4">
             <DataTable<InteractionRow>
               rows={shown}
@@ -1291,6 +1564,7 @@ function EngagementTab({
               ]}
             />
           </div>
+          )}
           <p className="mt-3 text-[12px] text-rose">
             Unavailable: no event fires on the sources or ask buttons — the AI
             columns are modelled.
@@ -1446,18 +1720,22 @@ function PublishingTab({
   view,
   contentType,
   section,
+  series,
 }: {
   view: ViewState;
   contentType: ContentType | "all";
   section: TimeSection | "all";
+  series: RegionSeries[];
 }) {
-  const rows = useMemo(
-    () =>
-      contentType === "all"
-        ? PUBLISHING_ROWS
-        : PUBLISHING_ROWS.filter((r) => r.contentType === contentType),
-    [contentType]
-  );
+  /* One region narrows the library to what was filed for it; several leave
+     this on everything, because the comparison is drawn per region below. */
+  const primaryRegion = series.length === 1 ? series[0].key : null;
+  const rows = useMemo(() => {
+    const base = publishingRowsForRegion(primaryRegion);
+    return contentType === "all"
+      ? base
+      : base.filter((r) => r.contentType === contentType);
+  }, [contentType, primaryRegion]);
 
   const { drill } = view;
   const scoped = useMemo(() => scope(rows, drill), [rows, drill]);
@@ -1467,6 +1745,33 @@ function PublishingTab({
      Weeks and days above it behave like every other tab. */
   const weekly = !drill.day && view.grain === "weekly";
   const level: Level | null = drill.day ? null : weekly ? "weekly" : "daily";
+
+  const compare = series.length > 1;
+
+  /* Nothing is filed to a city — content_items carries a state and no finer —
+     so a city here is showing its state's output, and two cities in one state
+     draw the same line. Better said out loud than left to be noticed. */
+  const cityNames = series
+    .map((sr) => (sr.key ? regionByKey(sr.key) : undefined))
+    .filter((r) => r?.scope === "city");
+  const cityNote = cityNames.length
+    ? cityNames.length === 1
+      ? `Filed for ${cityNames[0]!.state} — nothing is filed to a city, so ${cityNames[0]!.name} shows its state.`
+      : "Nothing is filed to a city, so each city here shows its state — two cities in one state will match."
+    : null;
+
+  /** The same reduction as `points`, run once per region. */
+  const countsFor = (key: string | null): Map<string, number> => {
+    const base = publishingRowsForRegion(key);
+    const filtered =
+      contentType === "all" ? base : base.filter((r) => r.contentType === contentType);
+    const acc = new Map<string, number>();
+    for (const r of scope(filtered, drill)) {
+      const k = drill.day ? r.contentType : weekly ? r.week : r.day;
+      acc.set(k, (acc.get(k) ?? 0) + r.count);
+    }
+    return acc;
+  };
 
   const points = useMemo<Point[]>(() => {
     if (drill.day) {
@@ -1529,12 +1834,43 @@ function PublishingTab({
           </span>
         )}
       </p>
-      <AxisBarChart
-        labels={points.map((p) => p.label)}
-        values={points.map((p) => p.value)}
-        name="Published"
-        onSelect={selector(view, points, level)}
-      />
+      {cityNote && (
+        <p className="mb-3 text-[12px] text-amber">{cityNote}</p>
+      )}
+      {compare ? (
+        <GroupedAxisChart
+          labels={points.map((p) => p.label)}
+          /* Keyed off the shared points so every region lines up against one
+             axis — a region that filed nothing on a day contributes a zero
+             rather than shifting the bars along. */
+          series={series.map((sr) => {
+            const acc = countsFor(sr.key);
+            return {
+              name: sr.name,
+              tone: sr.tone,
+              values: points.map((p) => acc.get(p.key) ?? 0),
+            };
+          })}
+          onSelect={selector(view, points, level)}
+        />
+      ) : (
+        <AxisBarChart
+          labels={points.map((p) => p.label)}
+          values={points.map((p) => p.value)}
+          name="Published"
+          onSelect={selector(view, points, level)}
+        />
+      )}
+      {compare && (
+        <RegionTotals
+          series={series}
+          label="Published"
+          totals={series.map((sr) => {
+            const acc = countsFor(sr.key);
+            return points.reduce((a, p) => a + (acc.get(p.key) ?? 0), 0);
+          })}
+        />
+      )}
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <div>

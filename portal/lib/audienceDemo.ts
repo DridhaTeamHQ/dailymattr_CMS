@@ -926,3 +926,206 @@ export const COVERAGE: { panel: string; measurable: boolean; note: string }[] = 
   { panel: "AI questions and source taps", measurable: false, note: "No event fires on either button." },
   { panel: "City", measurable: false, note: "Only the state is inferred today, from the request." },
 ];
+
+/* ── Where the readers are ──────────────────────────────────────────────────
+ *
+ * Invented like everything else here, and shaped so the comparison is worth
+ * arguing about: each region carries its own share of the national figure and
+ * its own per-window jitter, so two states do not come back as the same curve
+ * at two heights. A region that only scaled the national line would make every
+ * comparison look identical and teach the desk nothing.
+ *
+ * Shares are deliberate rather than random — the big metros lead, and the
+ * spread roughly follows where an English-language news app actually finds
+ * readers — so a chart of them is not obviously nonsense to someone who knows
+ * the market.
+ *
+ * "Overall" is not a region. It returns the national rows untouched, so
+ * switching the filter off gives back exactly the numbers that were there
+ * before, rather than the sum of a set of approximations.
+ */
+
+export type RegionScope = "state" | "city";
+
+export interface Region {
+  /** Stable id used in state and in the series name. */
+  key: string;
+  name: string;
+  /** For a city, the state it sits in. For a state, itself. */
+  state: string;
+  scope: RegionScope;
+  /** Share of the national figure, before per-window jitter. */
+  share: number;
+}
+
+/** State → cities, with each city's share of its state. */
+const REGION_TREE: {
+  state: string;
+  share: number;
+  cities: { name: string; share: number }[];
+}[] = [
+  { state: "Maharashtra", share: 0.17, cities: [
+      { name: "Mumbai", share: 0.55 }, { name: "Pune", share: 0.28 }, { name: "Nagpur", share: 0.17 } ] },
+  { state: "Karnataka", share: 0.13, cities: [
+      { name: "Bengaluru", share: 0.72 }, { name: "Mysuru", share: 0.16 }, { name: "Hubballi", share: 0.12 } ] },
+  { state: "Delhi", share: 0.12, cities: [
+      { name: "New Delhi", share: 0.64 }, { name: "Dwarka", share: 0.19 }, { name: "Rohini", share: 0.17 } ] },
+  { state: "Tamil Nadu", share: 0.11, cities: [
+      { name: "Chennai", share: 0.63 }, { name: "Coimbatore", share: 0.22 }, { name: "Madurai", share: 0.15 } ] },
+  { state: "Telangana", share: 0.10, cities: [
+      { name: "Hyderabad", share: 0.81 }, { name: "Warangal", share: 0.19 } ] },
+  { state: "Uttar Pradesh", share: 0.10, cities: [
+      { name: "Lucknow", share: 0.42 }, { name: "Kanpur", share: 0.31 }, { name: "Noida", share: 0.27 } ] },
+  { state: "West Bengal", share: 0.09, cities: [
+      { name: "Kolkata", share: 0.78 }, { name: "Howrah", share: 0.22 } ] },
+  { state: "Gujarat", share: 0.08, cities: [
+      { name: "Ahmedabad", share: 0.52 }, { name: "Surat", share: 0.30 }, { name: "Vadodara", share: 0.18 } ] },
+  { state: "Kerala", share: 0.06, cities: [
+      { name: "Kochi", share: 0.54 }, { name: "Thiruvananthapuram", share: 0.46 } ] },
+  { state: "Rajasthan", share: 0.04, cities: [
+      { name: "Jaipur", share: 0.71 }, { name: "Jodhpur", share: 0.29 } ] },
+];
+
+export const REGION_STATES: Region[] = REGION_TREE.map((s) => ({
+  key: `state:${s.state}`,
+  name: s.state,
+  state: s.state,
+  scope: "state",
+  share: s.share,
+}));
+
+export const REGION_CITIES: Region[] = REGION_TREE.flatMap((s) =>
+  s.cities.map((c) => ({
+    key: `city:${c.name}`,
+    name: c.name,
+    state: s.state,
+    scope: "city" as const,
+    share: s.share * c.share,
+  }))
+);
+
+const REGION_BY_KEY = new Map<string, Region>(
+  [...REGION_STATES, ...REGION_CITIES].map((r) => [r.key, r])
+);
+
+export const regionByKey = (key: string): Region | undefined => REGION_BY_KEY.get(key);
+
+/** Regions offered for a scope, largest first — the order a desk reads them. */
+export const regionsForScope = (scope: RegionScope): Region[] =>
+  (scope === "state" ? REGION_STATES : REGION_CITIES)
+    .slice()
+    .sort((a, b) => b.share - a.share);
+
+/**
+ * A stable number in [0,1) for a region on one row.
+ *
+ * Hashed rather than drawn from the module's generator, because the generator
+ * is consumed in module order — asking it for a value here would shift every
+ * figure defined after this point, and the whole premise of this file is that
+ * the numbers do not move between renders.
+ */
+function hash01(...parts: string[]): number {
+  let h = 2166136261;
+  const s = parts.join("|");
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/**
+ * The multiplier for one region on one row.
+ *
+ * Its share, moved by up to a fifth either way depending on the day and the
+ * window. That is what gives each region a shape of its own: a city that runs
+ * late reads differently from one that peaks at breakfast, which is the only
+ * reason to put two of them side by side.
+ */
+function weightFor(region: Region, day: string, section: string): number {
+  const jitter = 0.8 + hash01(region.key, day, section) * 0.4;
+  return region.share * jitter;
+}
+
+/** Rounds without letting a real figure collapse to nothing. */
+const atLeast = (n: number, floor = 0) => Math.max(floor, Math.round(n));
+
+/** The DAU rows for one region, or the national rows when given null. */
+export function dauRowsForRegion(key: string | null): DauRow[] {
+  const region = key ? REGION_BY_KEY.get(key) : undefined;
+  if (!region) return DAU_ROWS;
+  return DAU_ROWS.map((r) => {
+    const w = weightFor(region, r.day, r.section);
+    return {
+      ...r,
+      registeredDau: atLeast(r.registeredDau * w),
+      sessions: atLeast(r.sessions * w),
+      cardsSwiped: atLeast(r.cardsSwiped * w),
+      rightSwipes: atLeast(r.rightSwipes * w),
+      /* Per-user figures are rates, not totals. Scaling them by the region's
+         share would say a smaller state's readers each read less, which is a
+         different claim entirely — they move a little, and only a little. */
+      cardsPerActive: Math.round(r.cardsPerActive * (0.92 + hash01(region.key, r.day) * 0.16) * 10) / 10,
+      secondsPerActive: atLeast(r.secondsPerActive * (0.9 + hash01(region.key, r.section) * 0.2)),
+    };
+  });
+}
+
+/** The engagement rows for one region, or the national rows when given null. */
+export function interactionRowsForRegion(key: string | null): InteractionRow[] {
+  const region = key ? REGION_BY_KEY.get(key) : undefined;
+  if (!region) return INTERACTION_ROWS;
+  return INTERACTION_ROWS.map((r) => {
+    const w = weightFor(region, r.day, r.section);
+    return {
+      ...r,
+      views: atLeast(r.views * w),
+      likes: atLeast(r.likes * w),
+      comments: atLeast(r.comments * w),
+      shares: atLeast(r.shares * w),
+      saves: atLeast(r.saves * w),
+      aiQuestions: atLeast(r.aiQuestions * w),
+      sourceTaps: atLeast(r.sourceTaps * w),
+    };
+  });
+}
+
+/** States in a fixed order with running totals, for the weighted pick below. */
+const STATE_CUMULATIVE: { state: string; upTo: number }[] = (() => {
+  const total = REGION_TREE.reduce((a, s) => a + s.share, 0);
+  let running = 0;
+  return REGION_TREE.map((s) => {
+    running += s.share / total;
+    return { state: s.state, upTo: running };
+  });
+})();
+
+/** Which state a filed story belongs to. Stable for a given row. */
+function stateForRow(r: PublishingRow): string {
+  const x = hash01("filed", r.day, r.contentType, r.category);
+  return (STATE_CUMULATIVE.find((s) => x <= s.upTo) ?? STATE_CUMULATIVE.at(-1)!).state;
+}
+
+/**
+ * The publishing rows for one region, or all of them when given null.
+ *
+ * Assigned, not scaled. Publishing is what the desk filed, not where it was
+ * read, and a story filed for Maharashtra is one story rather than seventeen
+ * per cent of one. Scaling the counts by a share was the first attempt and it
+ * collapsed: cells hold one to three items, so a tenth of them rounds to zero
+ * and the smallest region published on none of the ninety days.
+ *
+ * Assigning each row to a state instead keeps whole stories, keeps the totals
+ * adding up to the national figure, and gives a small state a thin but real
+ * output rather than an empty chart.
+ *
+ * Cities inherit their state's output, because nothing is filed to a city —
+ * `content_items` carries a `state` and no finer. Two cities in one state
+ * therefore draw the same publishing line, which is the truth rather than a
+ * shortcoming, and the tab says so when a city is selected.
+ */
+export function publishingRowsForRegion(key: string | null): PublishingRow[] {
+  const region = key ? REGION_BY_KEY.get(key) : undefined;
+  if (!region) return PUBLISHING_ROWS;
+  return PUBLISHING_ROWS.filter((r) => stateForRow(r) === region.state);
+}

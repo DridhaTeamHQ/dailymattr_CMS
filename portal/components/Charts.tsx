@@ -750,3 +750,89 @@ export function GhostButton({
     </button>
   );
 }
+
+/**
+ * A multi-select built from toggles, which is also the comparison control.
+ *
+ * One selection filters, two or more compare — there is no separate "compare"
+ * mode to turn on, because the moment a second region is chosen the only
+ * sensible reading of the request is "against the first". Nothing selected
+ * means everywhere, so the way back to the whole picture is to clear it rather
+ * than to find an "All" entry hiding among thirty place names.
+ *
+ * Colours come from the caller, so the swatch here is the same colour as that
+ * series in the chart below. A legend that has to be matched up by reading is
+ * not a legend.
+ */
+export function TogglePills<K extends string>({
+  options,
+  selected,
+  onToggle,
+  onClear,
+  emptyLabel,
+  toneOf,
+  max,
+}: {
+  options: { key: K; label: string; hint?: string }[];
+  selected: K[];
+  onToggle: (k: K) => void;
+  onClear: () => void;
+  /** Shown as the first pill, selected when nothing else is. */
+  emptyLabel: string;
+  /** Series colour for a selected key, so pill and chart agree. */
+  toneOf?: (k: K) => string;
+  /** Beyond this, further options are disabled rather than hidden. */
+  max?: number;
+}) {
+  const atLimit = max !== undefined && selected.length >= max;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onClear}
+        aria-pressed={selected.length === 0}
+        className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
+          selected.length === 0
+            ? "border-violet bg-violet text-white"
+            : "border-line text-muted hover:text-ink"
+        }`}
+      >
+        {emptyLabel}
+      </button>
+
+      {options.map((o) => {
+        const on = selected.includes(o.key);
+        // Disabled only when it would add to a full set — never when it is
+        // already chosen, or the last one in could not be taken out again.
+        const blocked = atLimit && !on;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onToggle(o.key)}
+            disabled={blocked}
+            aria-pressed={on}
+            title={
+              blocked
+                ? `Comparing ${max} at once is the limit — remove one first`
+                : o.hint
+            }
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
+              on
+                ? "border-transparent bg-canvas text-ink"
+                : "border-line text-muted hover:text-ink"
+            } ${blocked ? "cursor-not-allowed opacity-40" : ""}`}
+          >
+            {on && toneOf && (
+              <span
+                className={`h-2 w-2 rounded-sm ${toneOf(o.key).replace("fill-", "bg-")}`}
+              />
+            )}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
