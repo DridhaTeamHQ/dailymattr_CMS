@@ -344,9 +344,7 @@ export default function AudiencePage() {
   const main = useTimeView();
   /** Notifications carry theirs, so the two sections cannot move each other. */
   const push = useTimeView();
-  const [dauMetric, setDauMetric] = useState<
-    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
-  >("registeredDau");
+  const [dauMetric, setDauMetric] = useState<DauMetricKey>("registeredDau");
   const [interactionMetric, setInteractionMetric] = useState<
     "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
   >("likes");
@@ -588,13 +586,12 @@ export default function AudiencePage() {
               label="Metric"
               value={dauMetric}
               onChange={setDauMetric}
-              options={[
-                { key: "registeredDau" as const, label: "Registered DAU" },
-                { key: "sessions" as const, label: "Active sessions" },
-                { key: "cardsSwiped" as const, label: "Cards swiped" },
-                { key: "rightSwipes" as const, label: "Right swipes" },
-                { key: "secondsPerActive" as const, label: "Seconds / active user" },
-              ]}
+              /* Straight off the metric table, so the menu cannot drift from
+                 what the chart actually draws. */
+              options={(Object.keys(DAU_METRICS) as DauMetricKey[]).map((k) => ({
+                key: k,
+                label: DAU_METRICS[k].label,
+              }))}
             />
           )}
 
@@ -1056,28 +1053,85 @@ function OutOfRange({ drill }: { drill: Drill }) {
 
 /* ────────────────────────────── tabs ──────────────────────────────── */
 
-const DAU_LABEL: Record<string, string> = {
-  registeredDau: "Registered DAU",
-  sessions: "Active sessions",
-  cardsSwiped: "Cards swiped",
-  rightSwipes: "Right swipes",
-  secondsPerActive: "Seconds / active user",
-};
+type DauMetricKey =
+  | "registeredDau"
+  | "sessions"
+  | "avgCards"
+  | "avgRightSwipes"
+  | "avgTime";
 
 /**
- * How each DAU measure combines.
+ * What each DAU measure is, and how it survives being regrouped.
  *
  * Readers are people, so they average across days rather than adding up;
- * swipes are events, so they add. Getting this wrong is how a dashboard ends
- * up claiming more weekly actives than it has users.
+ * events add. Getting that wrong is how a dashboard ends up claiming more
+ * weekly actives than it has users.
+ *
+ * The three averages are per active user, not per window. A total swipe count
+ * tracks how many people opened the app, which the DAU measure above already
+ * says — the question a swipe count is asked in its place is whether the
+ * people who came read much, and only a per-person figure answers that. They
+ * average at every level for the same reason: an average of averages across
+ * windows is close enough here, while adding them would report someone who
+ * read twelve cards as having read seventy.
+ *
+ * `total` is separate from `agg` because the comparison panel reduces a whole
+ * series to one number, and summing an average is meaningless — five regions'
+ * average reading time does not add up to anything.
  */
-const DAU_AGG: Record<string, { day?: "sum" | "mean"; week?: "sum" | "mean" }> = {
-  registeredDau: { day: "sum", week: "mean" },
-  // A session is an event, not a person, so unlike readers these add up.
-  sessions: { day: "sum", week: "sum" },
-  cardsSwiped: { day: "sum", week: "sum" },
-  rightSwipes: { day: "sum", week: "sum" },
-  secondsPerActive: { day: "mean", week: "mean" },
+const DAU_METRICS: Record<
+  DauMetricKey,
+  {
+    label: string;
+    value: (r: DauRow) => number;
+    agg: { day?: "sum" | "mean"; week?: "sum" | "mean" };
+    /** How a series collapses to one figure when regions are compared. */
+    total: "sum" | "mean";
+    format?: (n: number) => string;
+    /** Said under the chart, where the axis cannot say it. */
+    note?: string;
+  }
+> = {
+  registeredDau: {
+    label: "Registered DAU",
+    value: (r) => r.registeredDau,
+    agg: { day: "sum", week: "mean" },
+    total: "sum",
+  },
+  sessions: {
+    label: "Active sessions",
+    // A session is an event, not a person, so unlike readers these add up.
+    value: (r) => r.sessions,
+    agg: { day: "sum", week: "sum" },
+    total: "sum",
+  },
+  avgCards: {
+    label: "Avg cards swiped",
+    value: (r) => r.cardsPerActive,
+    agg: { day: "mean", week: "mean" },
+    total: "mean",
+    format: (n) => (Math.round(n * 10) / 10).toString(),
+    note: "Cards read by the average active user, not the total swiped.",
+  },
+  avgRightSwipes: {
+    label: "Avg right swipes",
+    /* Derived rather than stored: the rows carry the count and the readers it
+       came from, and a ratio of the two is the only honest per-person figure.
+       Guarded, because a window with no readers is a zero and not a hole. */
+    value: (r) => (r.registeredDau ? r.rightSwipes / r.registeredDau : 0),
+    agg: { day: "mean", week: "mean" },
+    total: "mean",
+    format: (n) => (Math.round(n * 100) / 100).toString(),
+    note: "Right swipes by the average active user, not the total.",
+  },
+  avgTime: {
+    label: "Avg time spent",
+    value: (r) => r.secondsPerActive,
+    agg: { day: "mean", week: "mean" },
+    total: "mean",
+    format: mmss,
+    note: "Time the average active user spent reading.",
+  },
 };
 
 /* ── Where the numbers are from ────────────────────────────────────────────
@@ -1202,17 +1256,26 @@ function RegionTotals({
   series,
   label,
   totals,
+  combine = "sum",
+  format = fmt,
 }: {
   series: RegionSeries[];
   label: string;
   totals: number[];
+  /** How the figures were reduced, which decides whether a share is meaningful. */
+  combine?: "sum" | "mean";
+  format?: (n: number) => string;
 }) {
   const sum = totals.reduce((a, b) => a + b, 0);
   const top = Math.max(...totals, 1);
+  /* A share of a set of averages is nonsense — five regions' average reading
+     time does not add to a whole that anyone owns a slice of. The bar still
+     ranks them against the largest, which is the comparison that survives. */
+  const shareable = combine === "sum";
   return (
     <div className="mt-4 rounded-2xl border border-line p-4">
       <div className="mb-3 text-[11px] font-semibold tracking-[0.12em] text-faint uppercase">
-        {label} over the period shown
+        {label} {combine === "mean" ? "across the period shown" : "over the period shown"}
       </div>
       <div className="space-y-2">
         {series.map((sr, i) => (
@@ -1228,16 +1291,20 @@ function RegionTotals({
               />
             </span>
             <span className="w-20 shrink-0 text-right text-[12px] font-extrabold tabular-nums">
-              {fmt(totals[i])}
+              {format(totals[i])}
             </span>
-            <span className="w-12 shrink-0 text-right text-[11px] text-faint tabular-nums">
-              {sum ? `${Math.round((totals[i] / sum) * 100)}%` : "—"}
-            </span>
+            {shareable && (
+              <span className="w-12 shrink-0 text-right text-[11px] text-faint tabular-nums">
+                {sum ? `${Math.round((totals[i] / sum) * 100)}%` : "—"}
+              </span>
+            )}
           </div>
         ))}
       </div>
       <p className="mt-3 text-[11px] text-faint">
-        Share is of the regions being compared, not of the country.
+        {shareable
+          ? "Share is of the regions being compared, not of the country."
+          : "An average per region, so there is no share to take — the bars rank them against the largest."}
       </p>
     </div>
   );
@@ -1295,10 +1362,7 @@ function DauTab({
   sectionFilter,
 }: {
   rows: DauRow[];
-  metric: keyof Pick<
-    DauRow,
-    "registeredDau" | "sessions" | "cardsSwiped" | "rightSwipes" | "secondsPerActive"
-  >;
+  metric: DauMetricKey;
   view: ViewState;
   series: RegionSeries[];
   sectionFilter: TimeSection | "all";
@@ -1307,7 +1371,8 @@ function DauTab({
      chart and then hunting for it in a fortnight of rows is the thing the
      drill-down is meant to remove. */
   const shown = scope(rows, view.drill);
-  const points = bucket(shown, view.grain, (r) => r[metric] as number, DAU_AGG[metric]);
+  const m = DAU_METRICS[metric];
+  const points = bucket(shown, view.grain, m.value, m.agg);
 
   /* Each region bucketed the same way as the chart above, so the bars line up
      against one axis and one set of labels. */
@@ -1319,8 +1384,8 @@ function DauTab({
         values: bucket(
           scope(bySection(dauRowsForRegion(s.key), sectionFilter), view.drill),
           view.grain,
-          (r) => r[metric] as number,
-          DAU_AGG[metric]
+          m.value,
+          m.agg
         ).map((p) => p.value),
       }))
     : [];
@@ -1344,15 +1409,23 @@ function DauTab({
         <AxisBarChart
           labels={points.map((p) => p.label)}
           values={points.map((p) => p.value)}
-          name={DAU_LABEL[metric]}
+          name={m.label}
+          format={m.format}
           onSelect={selector(view, points, levelOf(view.grain))}
         />
       )}
+      {m.note && <p className="mt-2 text-[11px] text-faint">{m.note}</p>}
       {compare && (
         <RegionTotals
           series={series}
-          label={DAU_LABEL[metric]}
-          totals={grouped.map((g) => g.values.reduce((a, b) => a + b, 0))}
+          label={m.label}
+          combine={m.total}
+          format={m.format}
+          totals={grouped.map((g) =>
+            g.values.length && m.total === "mean"
+              ? g.values.reduce((a, b) => a + b, 0) / g.values.length
+              : g.values.reduce((a, b) => a + b, 0)
+          )}
         />
       )}
       {/* Dropped while comparing: the same fortnight of windows once per region
@@ -1389,15 +1462,17 @@ function DauTab({
             },
             {
               key: "perUser",
-              label: "Cards / active user",
+              label: "Avg cards swiped",
               numeric: true,
-              render: (r) => (r.cardsPerActive ? r.cardsPerActive.toFixed(2) : "—"),
+              render: (r) => (r.cardsPerActive ? r.cardsPerActive.toFixed(1) : "—"),
             },
             {
               key: "seconds",
-              label: "Seconds / active user",
+              /* Named and written the way the chart says it. Reading "454" and
+                 having to divide by sixty is work the column can do. */
+              label: "Avg time spent",
               numeric: true,
-              render: (r) => (r.secondsPerActive ? r.secondsPerActive.toFixed(2) : "—"),
+              render: (r) => (r.secondsPerActive ? mmss(r.secondsPerActive) : "—"),
             },
           ]}
         />
