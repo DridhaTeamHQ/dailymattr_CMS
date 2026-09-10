@@ -13,7 +13,13 @@ Editorial changes to a pipeline article are stored as overrides on
 ## Applied migrations
 
 Run in this order against a fresh project (they are already applied to
-`ijnlvyctwgdvsedpejva`):
+`ijnlvyctwgdvsedpejva`).
+
+The number is the order, so it has to be unique. Two migrations were briefly
+both numbered 16 — written in parallel, each correct on its own — which leaves
+the order between them undefined for anyone replaying onto a fresh database.
+Check the highest number in `supabase/migrations/` before naming a new one, and
+add its row here at the same time.
 
 | # | Migration | What it does |
 |---|---|---|
@@ -32,6 +38,9 @@ Run in this order against a fresh project (they are already applied to
 | 13 | `13_content_comments` | Comment threads for CMS content: `content_comments`, `content_comment_likes`, and RPCs mirroring DB A's so the app maps both with one set of types. Until this, commenting on a Pix, Qix, Trax or desk-written article silently discarded the comment. |
 | 14 | `14_content_featured_and_modes` | `content_items.is_featured`, so a Pix, Qix, Trax or desk-written story can be the app's lead — until this the flag lived only on `article_selections` and the app hardcoded false for everything else. Also adds `article_selections.modes_override` for reading modes the desk writes onto a pipeline story, since DB A owns `articles.versions` and is never written to. |
 | 15 | `15_push` | `push_tokens`, `content_notifications`, and the RPCs behind the Notify readers action. Tokens are readable by nobody — the desk reaches them only through `app_push_audience`, which is limited to `super_admin` / `chief_editor`. A unique (source, content_id) makes a second broadcast of the same story impossible. |
+| 16 | `16_taste_targeting` | `reader_taste` — the per-topic affinity the app already ranks its own feed on, reported into the CMS database so a push can be aimed without a bridge to the pipeline project. Adds `app_push_audience(topic, include_new, threshold)` and its preview and size counterparts, plus a `push_open` event so a push report can show opens rather than only sends. |
+| 17 | `17_comment_moderation` | A delete policy on `content_comments` for reviewers and above. Reader writes still go only through the `app_*` functions — this adds no way to post or edit, only to remove. Before it, a comment could not be taken down by anyone, which for a news publisher is the absence of a takedown rather than a missing nicety. |
+| 18 | `18_client_errors` | `client_errors`, where a failure in the Studio lands instead of ending at `console.error` in a browser nobody is watching. Anyone signed in may file one; only an administrator may read or clear them, since a stack trace describes how the software is put together. Written by `portal/lib/report.ts`. |
 
 ### Two linter warnings that are the design
 
