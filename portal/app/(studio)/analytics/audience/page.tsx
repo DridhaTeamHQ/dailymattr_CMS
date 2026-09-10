@@ -55,11 +55,11 @@ import {
   LATEST_DAY,
   LATEST_WEEK,
   NOTIFICATIONS,
-  NOTIFICATION_BY_SECTION,
   PRODUCTS,
   PRODUCT_ENGAGEMENT,
   PRODUCT_LABEL,
   PUBLISHING_ROWS,
+  PUSH_CATEGORIES,
   PUSH_SUMMARY,
   RATING,
   TIMEZONE,
@@ -74,13 +74,15 @@ import {
   type InteractionRow,
   type ItemEngagement,
   type NotificationRow,
-  type NotificationSectionRow,
   type ContentType,
   type Product,
   type ProductEngagement,
   type PublishingRow,
   type TimeSection,
   type TraxRow,
+  REGION_STATES,
+  REGION_CITIES,
+  notificationSectionRowsFor,
   regionsForScope,
   regionByKey,
   dauRowsForRegion,
@@ -411,14 +413,12 @@ export default function AudiencePage() {
     () => bySection(interactionRowsForRegion(primaryRegion), section),
     [section, primaryRegion]
   );
-  /** Notifications read their own window filter, not the tabbed card's. */
-  const notificationSectionRows = useMemo(
-    () =>
-      push.section === "all"
-        ? NOTIFICATION_BY_SECTION
-        : NOTIFICATION_BY_SECTION.filter((r) => r.section === push.section),
-    [push.section]
-  );
+  /* Notifications read their own window filter, not the tabbed card's — and
+     their own region and topic, for the same reason: the two sections are
+     screens apart, and a control in one silently moving a chart in the other
+     is how a desk screenshots the wrong number. */
+  const [pushRegion, setPushRegion] = useState<string | null>(null);
+  const [pushCategory, setPushCategory] = useState<string | null>(null);
 
   if (!user || !can.seeStats(user.role)) {
     return (
@@ -840,10 +840,16 @@ export default function AudiencePage() {
       <div className="mb-6 grid gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Panel
-            title="Open rate by send time"
-            note="Counted against the window a push went out in, not the one it was read in. Sent counts FCM-accepted recipients; the rate uses that same cohort and includes later opens."
+            title="Sent and opened, by send time"
+            note="Counted against the window a push went out in, not the one it was read in. Sent counts FCM-accepted recipients; the rate uses that same cohort and includes later opens. These four controls narrow this chart only — the tiles above and the list below stay on everything."
           >
-            <NotificationsSection rows={notificationSectionRows} push={push} />
+            <NotificationsSection
+              push={push}
+              region={pushRegion}
+              onRegion={setPushRegion}
+              category={pushCategory}
+              onCategory={setPushCategory}
+            />
           </Panel>
         </div>
         <Panel
@@ -1543,25 +1549,50 @@ function DauTab({
  * tabbed card's, because it no longer sits inside that card: a control three
  * screens above a chart is a control nobody knows is on.
  */
+/** What the notification chart draws. */
+type PushMetric = "both" | "rate";
+
+const PUSH_METRICS: { key: PushMetric; label: string }[] = [
+  { key: "both", label: "Sent & opened" },
+  { key: "rate", label: "Open rate" },
+];
+
 function NotificationsSection({
-  rows,
   push,
+  region,
+  onRegion,
+  category,
+  onCategory,
 }: {
-  rows: NotificationSectionRow[];
   push: ReturnType<typeof useTimeView>;
+  region: string | null;
+  onRegion: (key: string | null) => void;
+  category: string | null;
+  onCategory: (name: string | null) => void;
 }) {
   const { view } = push;
+  const [metric, setMetric] = useState<PushMetric>("both");
+
+  /* Rebuilt whenever the region or topic changes, then narrowed by the send
+     window the same way it always was. */
+  const rows = useMemo(() => {
+    const base = notificationSectionRowsFor(region, category);
+    return push.section === "all" ? base : base.filter((r) => r.section === push.section);
+  }, [region, category, push.section]);
+
   const shown = scope(rows, view.drill);
+  const sent = bucket(shown, view.grain, (r) => r.sent);
+  const opened = bucket(shown, view.grain, (r) => r.opened);
   /* Open rate is a ratio, so it is rebuilt from the summed numerator and
      denominator at each resolution rather than averaged. Averaging the rate of
      a 30k send with that of a 200 send would let the small one move the week. */
-  const sent = bucket(shown, view.grain, (r) => r.sent);
-  const opened = bucket(shown, view.grain, (r) => r.opened);
   const points = sent.map((p, i) => ({
     key: p.key,
     label: p.label,
     value: p.value ? Math.round((opened[i].value / p.value) * 1000) / 10 : 0,
   }));
+
+  const level = levelOf(view.grain);
 
   return (
     <>
@@ -1572,6 +1603,15 @@ function NotificationsSection({
           value={push.grain}
           onChange={push.chooseGrain}
         />
+        <Segmented
+          label="Show"
+          options={PUSH_METRICS}
+          value={metric}
+          onChange={setMetric}
+        />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <Select
           label="Send window"
           value={push.section}
@@ -1581,25 +1621,58 @@ function NotificationsSection({
             ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
           ]}
         />
+        {/* One region at a time here, not the comparison the tabbed card
+            offers: this chart already carries two series per tick, and three
+            states times sent-and-opened is six bars fighting over one slot. */}
+        <Select
+          label="Region"
+          value={region ?? "all"}
+          onChange={(k) => onRegion(k === "all" ? null : k)}
+          options={[
+            { key: "all", label: "Everywhere" },
+            ...REGION_STATES.map((r) => ({ key: r.key, label: r.name })),
+            ...REGION_CITIES.map((r) => ({ key: r.key, label: `${r.name} (${r.state})` })),
+          ]}
+        />
+        <Select
+          label="Topic"
+          value={category ?? "all"}
+          onChange={(k) => onCategory(k === "all" ? null : k)}
+          options={[
+            { key: "all", label: "All topics" },
+            ...PUSH_CATEGORIES.map((c) => ({ key: c, label: c })),
+          ]}
+        />
       </div>
 
       <Breadcrumb drill={push.drill} onDrill={push.chooseDrill} />
 
       <p className="mb-4 text-[11px] text-faint">
         {grainNote(view)}
-        {levelOf(view.grain) && " Click a bar to open it."}
+        {level && " Click a bar to open it."}
+        {region &&
+          ` ${regionByKey(region)?.name ?? "This region"}'s share of each send, weighted by its share of installs.`}
       </p>
 
-      {shown.length ? (
+      {!shown.length ? (
+        <OutOfRange drill={view.drill} />
+      ) : metric === "both" ? (
+        <GroupedAxisChart
+          labels={sent.map((p) => p.label)}
+          series={[
+            { name: "Sent", tone: "fill-accent", values: sent.map((p) => p.value) },
+            { name: "Opened", tone: "fill-mint", values: opened.map((p) => p.value) },
+          ]}
+          onSelect={selector(view, sent, level)}
+        />
+      ) : (
         <AxisBarChart
           labels={points.map((p) => p.label)}
           values={points.map((p) => p.value)}
           name="Open rate (%)"
           format={(n) => `${Math.round(n * 100) / 100}`}
-          onSelect={selector(view, points, levelOf(view.grain))}
+          onSelect={selector(view, points, level)}
         />
-      ) : (
-        <OutOfRange drill={view.drill} />
       )}
     </>
   );

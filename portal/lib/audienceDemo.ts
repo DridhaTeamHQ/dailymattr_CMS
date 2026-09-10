@@ -308,6 +308,8 @@ export interface NotificationRow {
   id: number;
   title: string;
   type: PushType;
+  /** The topic it was filed under — what `app_push_audience` targets on. */
+  category: string;
   sentAt: string;
   day: string;
   week: string;
@@ -319,23 +321,30 @@ export interface NotificationRow {
   openRate: number;
 }
 
-const PUSH_TITLES: [string, PushType][] = [
-  ["Rupee climbs to a three-month high against the dollar", "article"],
-  ["Cabinet clears the new transport bill after a six-hour sitting", "article"],
-  ["Monsoon arrives a week early in Kerala, IMD confirms", "buzz"],
-  ["India chase 287 to level the series in Colombo", "buzz"],
-  ["Metro Phase III gets central funding of Rs 4,200 crore", "article"],
-  ["Two crore GST filings in a single day, a record", "buzz"],
-  ["Wildfire warning issued for the Nilgiris through Sunday", "article"],
-  ["Budget session opens on Monday: five things to watch", "custom"],
-  ["Singapore open to chemical castration for sex offenders", "buzz"],
-  ["Hyderabad Metro adds 40 trips on the Blue Line from today", "article"],
-  ["SC to hear the NEET paper leak petitions on Thursday", "article"],
-  ["Telangana declares a holiday for polling on the 14th", "buzz"],
+/* Title, product, and the topic it was filed under.
+ *
+ * The category is written down rather than derived, because a push already
+ * carries one in the real system: `app_push_audience` takes a topic and sends
+ * only to readers who lean toward it. Hashing a category onto a headline about
+ * the rupee and getting "Sports" would make the filter meaningless the first
+ * time anyone read the table. */
+const PUSH_TITLES: [string, PushType, string][] = [
+  ["Rupee climbs to a three-month high against the dollar", "article", "Finance"],
+  ["Cabinet clears the new transport bill after a six-hour sitting", "article", "Politics"],
+  ["Monsoon arrives a week early in Kerala, IMD confirms", "buzz", "National"],
+  ["India chase 287 to level the series in Colombo", "buzz", "Sports"],
+  ["Metro Phase III gets central funding of Rs 4,200 crore", "article", "National"],
+  ["Two crore GST filings in a single day, a record", "buzz", "Business"],
+  ["Wildfire warning issued for the Nilgiris through Sunday", "article", "National"],
+  ["Budget session opens on Monday: five things to watch", "custom", "Politics"],
+  ["Singapore open to chemical castration for sex offenders", "buzz", "International"],
+  ["Hyderabad Metro adds 40 trips on the Blue Line from today", "article", "Telangana"],
+  ["SC to hear the NEET paper leak petitions on Thursday", "article", "National"],
+  ["Telangana declares a holiday for polling on the 14th", "buzz", "Telangana"],
 ];
 
 /** Recent broadcasts, newest first. Twelve, so the table has a scroll. */
-export const NOTIFICATIONS: NotificationRow[] = PUSH_TITLES.map(([title, type], i) => {
+export const NOTIFICATIONS: NotificationRow[] = PUSH_TITLES.map(([title, type, category], i) => {
   const dayIdx = Math.floor(i / 2) + 1;
   const day = daysAgo(dayIdx);
   // Alternate a morning and an evening send so the by-window view has both.
@@ -348,6 +357,7 @@ export const NOTIFICATIONS: NotificationRow[] = PUSH_TITLES.map(([title, type], 
     id: 540 + i * 3,
     title,
     type,
+    category,
     sentAt: `${day}T${section === "6am–9am" ? "07" : "19"}:15:00+05:30`,
     day,
     week: weekOf(day),
@@ -1101,6 +1111,56 @@ export function interactionRowsForRegion(key: string | null): InteractionRow[] {
       sourceTaps: atLeast(r.sourceTaps * w),
     };
   });
+}
+
+/**
+ * Topics the desk has actually pushed on, largest first.
+ *
+ * Not the full category list: five of the twelve have never carried a push,
+ * and offering them as filters would mean seven of the menu's entries emptying
+ * the chart with no way to tell "nothing was sent" from "something is broken".
+ */
+export const PUSH_CATEGORIES: string[] = (() => {
+  const count = new Map<string, number>();
+  for (const n of NOTIFICATIONS) count.set(n.category, (count.get(n.category) ?? 0) + 1);
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c]) => c);
+})();
+
+/**
+ * Open rate by send window, narrowed to one region and/or one topic.
+ *
+ * A push goes to everyone at once, so a region's slice of it is its slice of
+ * the installs — the same weighting the reading figures use, and for the same
+ * reason. The open *rate* therefore stays in the same neighbourhood while
+ * moving a little from region to region, which is the comparison worth having:
+ * a state that opens the same push more than another is the finding, not a
+ * state receiving fewer of them.
+ */
+export function notificationSectionRowsFor(
+  regionKey: string | null,
+  category: string | null
+): NotificationSectionRow[] {
+  if (!regionKey && !category) return NOTIFICATION_BY_SECTION;
+
+  const region = regionKey ? REGION_BY_KEY.get(regionKey) : undefined;
+  const sends = category ? NOTIFICATIONS.filter((n) => n.category === category) : NOTIFICATIONS;
+
+  return Array.from({ length: WINDOW_DAYS }, (_, k) => daysAgo(WINDOW_DAYS - k)).flatMap((day) =>
+    TIME_SECTIONS.map((section) => {
+      const inWindow = sends.filter((n) => n.day === day && n.section === section);
+      const w = region ? weightFor(region, day, section) : 1;
+      const sent = atLeast(inWindow.reduce((a, n) => a + n.fcmAccepted, 0) * w);
+      const opened = atLeast(inWindow.reduce((a, n) => a + n.opened, 0) * w);
+      return {
+        day,
+        week: weekOf(day),
+        section,
+        sent,
+        opened,
+        openRate: sent ? Math.round((opened / sent) * 1000) / 10 : 0,
+      };
+    })
+  );
 }
 
 /** States in a fixed order with running totals, for the weighted pick below. */
