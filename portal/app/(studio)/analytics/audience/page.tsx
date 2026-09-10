@@ -123,16 +123,27 @@ const stamp = (day: string, section: string) => `${day.slice(5)} ${section}`;
  * fortnight of one-bar-per-day: the question asked of a single day is when
  * inside it, and the run of days is what "Weekly" opens into.
  */
-type Granularity = "daily" | "weekly" | "sections";
+type Granularity = "overall" | "daily" | "weekly" | "sections";
 
+/**
+ * What the View switch offers.
+ *
+ * "Time sections" is not among them: every day already opens into its reading
+ * windows when you click its bar, and the whole range cut by window was
+ * ninety-eight bars nobody read across. The window filter beside this control
+ * is the way to ask about one window. "Overall" takes its place — the whole
+ * range as a single figure, which is the comparison the region picker makes
+ * worth having: one bar per state, no time axis in the way.
+ */
 const GRANULARITIES: { key: Granularity; label: string }[] = [
+  { key: "overall", label: "Overall" },
   { key: "daily", label: "Daily" },
   { key: "weekly", label: "Weekly" },
-  { key: "sections", label: "Time sections" },
 ];
 
 /** Where each option starts. Daily opens straight into the latest day. */
 const GRAIN_DRILL: Record<Granularity, Drill> = {
+  overall: {},
   daily: { week: LATEST_WEEK, day: LATEST_DAY },
   weekly: {},
   sections: {},
@@ -206,6 +217,25 @@ function bucket<T extends TimeRow>(
     byDay.set(r.day, list);
   }
 
+  /* One figure for the range, folded the same way a week is: windows into
+     days by `dayHow`, then days into the whole by `weekHow`. Going straight
+     from rows to a single number would sum actives across every day and call
+     the result the audience, which is the same reader counted fourteen times. */
+  if (g === "overall") {
+    const days = collapse(byDay, dayHow).map((p) => p.value);
+    if (!days.length) return [];
+    return [
+      {
+        key: "overall",
+        label: "Overall",
+        value:
+          weekHow === "mean"
+            ? Math.round(mean(days) * 100) / 100
+            : days.reduce((a, b) => a + b, 0),
+      },
+    ];
+  }
+
   if (g === "daily") {
     return collapse(byDay, dayHow).map((p) => ({ ...p, label: p.key.slice(5) }));
   }
@@ -265,7 +295,8 @@ interface ViewState {
 }
 
 /** A chart at the finest resolution has nothing left to open. */
-const levelOf = (g: Granularity): Level | null => (g === "sections" ? null : g);
+const levelOf = (g: Granularity): Level | null =>
+  g === "sections" || g === "overall" ? null : g;
 
 /** Wires a bar click back to the day or week that produced the bar. */
 const selector = (view: ViewState, points: Point[], level: Level | null) =>
@@ -275,6 +306,8 @@ const selector = (view: ViewState, points: Point[], level: Level | null) =>
 function grainNote(view: ViewState) {
   if (view.drill.day)
     return `One bar per reading window, inside ${view.drill.day}. Counted events are totalled.`;
+  if (view.grain === "overall")
+    return "One figure for the whole range. Counted events are totalled; per-user figures and rates are averaged over the days, because summing readers across days counts the same person more than once.";
   if (view.grain === "sections")
     return "One bar per reading window, for every day in range.";
   if (view.grain === "daily")
@@ -1869,7 +1902,9 @@ function PublishingTab({
      day, not at an hour — so its last level is "what went out", by product.
      Weeks and days above it behave like every other tab. */
   const weekly = !drill.day && view.grain === "weekly";
-  const level: Level | null = drill.day ? null : weekly ? "weekly" : "daily";
+  const overall = !drill.day && view.grain === "overall";
+  const level: Level | null =
+    drill.day || overall ? null : weekly ? "weekly" : "daily";
 
   const compare = series.length > 1;
 
@@ -1892,7 +1927,13 @@ function PublishingTab({
       contentType === "all" ? base : base.filter((r) => r.contentType === contentType);
     const acc = new Map<string, number>();
     for (const r of scope(filtered, drill)) {
-      const k = drill.day ? r.contentType : weekly ? r.week : r.day;
+      const k = drill.day
+        ? r.contentType
+        : overall
+          ? "overall"
+          : weekly
+            ? r.week
+            : r.day;
       acc.set(k, (acc.get(k) ?? 0) + r.count);
     }
     return acc;
@@ -1908,6 +1949,12 @@ function PublishingTab({
         value: acc.get(t) ?? 0,
       }));
     }
+    /* Publishing is a count of items filed, so the whole range is simply their
+       sum — there is no per-reader figure here to average instead. */
+    if (overall) {
+      const total = scoped.reduce((a, r) => a + r.count, 0);
+      return [{ key: "overall", label: "Overall", value: total }];
+    }
     const acc = new Map<string, number>();
     for (const r of scoped) {
       const k = weekly ? r.week : r.day;
@@ -1920,7 +1967,7 @@ function PublishingTab({
         label: weekly ? `w/c ${key.slice(5)}` : key.slice(5),
         value,
       }));
-  }, [scoped, weekly, drill.day]);
+  }, [scoped, weekly, overall, drill.day]);
 
   const byCategory = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -1948,7 +1995,14 @@ function PublishingTab({
     <>
       <p className="mb-3 text-[12px] text-faint">
         Publishing history,{" "}
-        {drill.day ? "by product" : weekly ? "by week" : "by day"}. Counts every
+        {drill.day
+          ? "by product"
+          : overall
+            ? "for the whole range"
+            : weekly
+              ? "by week"
+              : "by day"}
+        . Counts every
         item that reached readers across all seven products.
         {section !== "all" && (
           <span className="text-amber">
