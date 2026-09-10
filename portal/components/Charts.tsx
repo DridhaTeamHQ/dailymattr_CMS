@@ -451,33 +451,87 @@ export function GroupedAxisChart({
 /**
  * Horizontal bars with a label and a value, scaled to the largest row. These
  * are read as a ranking — which is longest — not against an axis.
+ *
+ * The value rides at the tip of its own bar rather than in a column at the far
+ * right. Down that column the number and the bar it belongs to could be a
+ * hundred points of empty track apart, so reading "how long" and "how many"
+ * together meant crossing the row twice.
+ *
+ * That is what `FILL` is for: bars are scaled into the leftmost 82% so the
+ * longest one still has somewhere to put its number. Nothing is lost by it —
+ * these have no axis to be measured against, only each other, and every bar is
+ * shortened by the same factor.
  */
+const FILL = 78;
+
 export function BarList({
   rows,
   tone = "bg-accent",
   format = (n: number) => fmt(n),
+  onSelect,
+  selected,
 }: {
-  rows: { name: string; value: number }[];
+  rows: { name: string; value: number; key?: string }[];
   tone?: string;
   format?: (n: number) => string;
+  /** Makes the rows clickable. Receives `key` when a row carries one. */
+  onSelect?: (key: string) => void;
+  /** The picked row's key, drawn as held down. */
+  selected?: string | null;
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div className="space-y-2.5">
-      {rows.map((r) => (
-        <div key={r.name} className="flex items-center gap-3">
-          <span className="w-28 shrink-0 truncate text-[12px] font-bold">{r.name}</span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-canvas">
-            <div
-              className={`h-full rounded-full ${tone}`}
-              style={{ width: `${Math.max(2, (r.value / max) * 100)}%` }}
-            />
+      {rows.map((r, i) => {
+        const id = r.key ?? r.name;
+        const pct = Math.max(1.5, (r.value / max) * FILL);
+        const isOn = selected != null && selected === id;
+        const body = (
+          <>
+            <span
+              className={`w-28 shrink-0 truncate text-[12px] font-bold ${
+                selected != null && !isOn ? "text-muted" : ""
+              }`}
+            >
+              {r.name}
+            </span>
+            {/* Not overflow-hidden: the value sits inside this box, past the
+                end of the fill, and clipping is exactly what it must not do. */}
+            <div className="relative h-2 flex-1 rounded-full bg-canvas">
+              <div
+                className={`h-full rounded-full ${tone} ${
+                  selected != null && !isOn ? "opacity-40" : ""
+                }`}
+                style={{ width: `${pct}%` }}
+              />
+              <span
+                className="absolute top-1/2 ml-2 -translate-y-1/2 text-[12px] font-bold whitespace-nowrap tabular-nums"
+                style={{ left: `${pct}%` }}
+              >
+                {format(r.value)}
+              </span>
+            </div>
+          </>
+        );
+
+        return onSelect ? (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect(id)}
+            aria-pressed={isOn}
+            /* Not hover:bg-canvas, which is the track's own colour — the row
+               would light up by making its bar's track disappear. */
+            className="flex w-full cursor-pointer items-center gap-3 rounded-lg py-0.5 text-left transition-colors hover:bg-tint"
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={id} className="flex items-center gap-3" data-row={i}>
+            {body}
           </div>
-          <span className="w-14 shrink-0 text-right text-[12px] font-bold tabular-nums">
-            {format(r.value)}
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

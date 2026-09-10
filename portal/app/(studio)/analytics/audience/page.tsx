@@ -1974,18 +1974,37 @@ function PublishingTab({
       }));
   }, [scoped, weekly, overall, drill.day]);
 
+  /* Clicking a bar in "By product" asks what that product is made of, which
+     is the question the panel beside it already answers for everything. So it
+     narrows that panel and nothing else — the chart above and the table below
+     stay where they are, because the click was about the split, not a filter
+     on the tab. Clicking it again puts it back. */
+  const [picked, setPicked] = useState<ContentType | null>(null);
+
+  /* The Content type dropdown has already narrowed the tab to one product, so
+     picking a second one here could only ever produce an empty panel. The
+     dropdown wins and the rows stop being clickable — the pick is remembered,
+     not thrown away, and comes back when the dropdown goes to All types. */
+  const focusType = contentType === "all" ? picked : null;
+
   const byCategory = useMemo(() => {
     const acc: Record<string, number> = {};
-    for (const r of scoped) acc[r.category] = (acc[r.category] ?? 0) + r.count;
+    for (const r of scoped) {
+      if (focusType && r.contentType !== focusType) continue;
+      acc[r.category] = (acc[r.category] ?? 0) + r.count;
+    }
     return CATEGORIES.map((name) => ({ name, value: acc[name] ?? 0 })).sort(
       (a, b) => b.value - a.value
     );
-  }, [scoped]);
+  }, [scoped, focusType]);
 
   const byType = useMemo(() => {
     const acc: Record<string, number> = {};
     for (const r of PUBLISHING_ROWS) acc[r.contentType] = (acc[r.contentType] ?? 0) + r.count;
     return CONTENT_TYPES.map((t) => ({
+      /* The product itself, not its label — the click has to come back as
+         something the rows can be filtered by. */
+      key: t,
       name: CONTENT_TYPE_LABEL[t],
       value: acc[t] ?? 0,
     })).sort((a, b) => b.value - a.value);
@@ -2048,20 +2067,44 @@ function PublishingTab({
         />
       )}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      {/* Two rankings of the same library, so they need visible daylight
+          between them — at gap-5 the right-hand labels read as a third column
+          of the left-hand chart. */}
+      <div className="mt-5 grid gap-8 lg:grid-cols-2 lg:gap-16">
         <div>
           <h3 className="mb-3 text-[12px] font-bold text-faint">By product</h3>
-          <BarList rows={byType} />
+          <BarList
+            rows={byType}
+            onSelect={
+              contentType === "all"
+                ? (k) => setPicked((f) => (f === k ? null : (k as ContentType)))
+                : undefined
+            }
+            selected={focusType}
+          />
           <p className="mt-2 text-[11px] text-faint">
             Always the whole library, so the split stays readable while the
             filter narrows everything else on the tab.
+            {contentType === "all" &&
+              " Click a product to see what it is made of, beside."}
           </p>
         </div>
         <div>
-          <h3 className="mb-3 text-[12px] font-bold text-faint">
-            By category
-            {contentType !== "all" && ` · ${CONTENT_TYPE_LABEL[contentType]} only`}
-            {drill.day ? ` · ${drill.day}` : drill.week ? ` · w/c ${drill.week}` : ""}
+          <h3 className="mb-3 flex flex-wrap items-center gap-2 text-[12px] font-bold text-faint">
+            <span>
+              By category
+              {contentType !== "all" && ` · ${CONTENT_TYPE_LABEL[contentType]} only`}
+              {drill.day ? ` · ${drill.day}` : drill.week ? ` · w/c ${drill.week}` : ""}
+            </span>
+            {focusType && (
+              <button
+                type="button"
+                onClick={() => setPicked(null)}
+                className="cursor-pointer rounded-full bg-tint px-2 py-0.5 text-[11px] font-bold text-accent"
+              >
+                {CONTENT_TYPE_LABEL[focusType]} ×
+              </button>
+            )}
           </h3>
           <BarList rows={byCategory} tone="bg-violet" />
         </div>
