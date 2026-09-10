@@ -130,7 +130,7 @@ type Granularity = "overall" | "daily" | "weekly" | "sections";
  *
  * "Time sections" is not among them: every day already opens into its reading
  * windows when you click its bar, and the whole range cut by window was
- * ninety-eight bars nobody read across. The window filter beside this control
+ * 112 bars nobody read across. The window filter beside this control
  * is the way to ask about one window. "Overall" takes its place — the whole
  * range as a single figure, which is the comparison the region picker makes
  * worth having: one bar per state, no time axis in the way.
@@ -260,7 +260,7 @@ function bucket<T extends TimeRow>(
  *
  * A week bar answers "how was the week" and immediately raises "which day",
  * so clicking one opens it: the week becomes seven days, and a day becomes
- * its seven reading windows. It is the same series regrouped and narrowed,
+ * its eight reading windows. It is the same series regrouped and narrowed,
  * not another query — every row already carries day, week and window.
  */
 
@@ -332,7 +332,7 @@ const mmss = (sec: number) => {
  * meant.
  */
 function useTimeView() {
-  /* Daily by default: fourteen days times seven windows is ninety-eight bars,
+  /* Daily by default: fourteen days times eight windows is 112 bars,
      which answers "when in the day" at the cost of "how is the week going",
      and the latter is what people open the page for. */
   const [grain, setGrain] = useState<Granularity>("daily");

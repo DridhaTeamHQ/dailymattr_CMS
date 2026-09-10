@@ -44,11 +44,15 @@ export const TIMEZONE = "Asia/Calcutta";
 /**
  * The day's reading windows, as the desk asked for them.
  *
- * Unequal spans on purpose: the overnight bucket is six hours because almost
- * nothing happens in it, and splitting it would be five empty columns.
+ * Eight three-hour windows, evenly spanned. The overnight stretch used to be
+ * one six-hour bucket on the grounds that almost nothing happens in it, but
+ * that hid the one thing worth knowing about it: the late-night tail and the
+ * dead hours before dawn are not the same audience, and a single column of
+ * 4% could not say which of the two it was.
  */
 export const TIME_SECTIONS = [
-  "12am–6am",
+  "12am–3am",
+  "3am–6am",
   "6am–9am",
   "9am–12pm",
   "12pm–3pm",
@@ -61,7 +65,10 @@ export type TimeSection = (typeof TIME_SECTIONS)[number];
 
 /** Two commutes and a bedtime carry the day; the small hours barely register. */
 const SECTION_WEIGHT: Record<TimeSection, number> = {
-  "12am–6am": 0.04,
+  /* The old 4% overnight bucket, split the way the hours actually differ —
+     most of it is people who have not gone to bed yet. */
+  "12am–3am": 0.028,
+  "3am–6am": 0.012,
   "6am–9am": 0.22,
   "9am–12pm": 0.14,
   "12pm–3pm": 0.11,
@@ -77,7 +84,10 @@ const SECTION_WEIGHT: Record<TimeSection, number> = {
  * with nothing else to do, the desk check is a glance.
  */
 const SECTION_INTENSITY: Record<TimeSection, number> = {
-  "12am–6am": 0.7,
+  "12am–3am": 0.75,
+  /* The fewest readers and the shortest visits: a glance at a phone that woke
+     someone up, not a sitting. */
+  "3am–6am": 0.55,
   "6am–9am": 1.35,
   "9am–12pm": 0.85,
   "12pm–3pm": 0.95,
@@ -553,7 +563,10 @@ export interface TraxTimeRow {
  * something else — so it uses its own weighting rather than the shared one.
  */
 const AUDIO_WEIGHT: Record<TimeSection, number> = {
-  "12am–6am": 0.06,
+  /* Audio holds up later than reading does, so more of the overnight share
+     sits before 3am than the reading split gives it. */
+  "12am–3am": 0.045,
+  "3am–6am": 0.015,
   "6am–9am": 0.24,
   "9am–12pm": 0.1,
   "12pm–3pm": 0.09,
