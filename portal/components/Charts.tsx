@@ -541,39 +541,103 @@ export function BarList({
  * varying strength stays readable for anyone who cannot separate red from
  * green, and keeps the grid in the palette.
  */
-export function Heatmap({
+/**
+ * A dated row per day, an hour per column, the figure written in the cell.
+ *
+ * Three bands rather than a continuous ramp. A gradient across twenty-four
+ * columns asks the reader to compare two shades of blue a screen apart and
+ * decide which is darker, which nobody can do; three named bands can be read
+ * off the legend, and the number is in the cell for anyone who needs the
+ * actual figure rather than the shape.
+ *
+ * The thresholds are shares of the busiest cell, not fixed counts, so the
+ * bands mean the same thing whatever the traffic.
+ */
+/* The fills are variables rather than utilities because `bg-accent-solid` is
+   not one — the token is in @theme but Tailwind emits no class for it, so it
+   rendered as no background at all. globals.css reaches for the same variable
+   directly wherever a button needs this fill. */
+const BANDS = [
+  {
+    at: 0.66,
+    label: "High",
+    /* accent-solid, not accent: the figure is written in the cell in white,
+       and `accent` lightens in dark mode to read *on* dark surfaces, which
+       drops white sitting *on it* to 3:1. This one is fixed in both themes. */
+    bg: "var(--color-accent-solid)",
+    text: "text-white",
+  },
+  {
+    at: 0.33,
+    label: "Medium",
+    bg: "color-mix(in srgb, var(--color-accent) 45%, transparent)",
+    text: "text-ink",
+  },
+  { at: 0, label: "Low", bg: "var(--color-tint)", text: "text-muted" },
+];
+
+export function HourHeatmap({
   rows,
-  rowLabels,
   colLabels,
+  format = (n: number) => fmt(n),
 }: {
-  rows: number[][];
-  rowLabels: string[];
+  rows: { day: string; weekday: string; date: string; values: number[] }[];
   colLabels: readonly string[];
+  format?: (n: number) => string;
 }) {
-  const max = Math.max(1, ...rows.flat());
+  const max = Math.max(1, ...rows.flatMap((r) => r.values));
+  const bandOf = (v: number) => BANDS.find((b) => v / max > b.at) ?? BANDS[BANDS.length - 1];
+
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[440px]">
-        <div className="mb-1 flex gap-1 pl-9">
-          {colLabels.map((c) => (
-            <div key={c} className="flex-1 text-center text-[9px] leading-tight text-faint">
-              {c}
+    <div>
+      {/* Low first, the way the eye climbs it. */}
+      <div className="mb-3 flex flex-wrap items-center gap-4">
+        {[...BANDS].reverse().map((b) => (
+          <span key={b.label} className="flex items-center gap-1.5 text-[11px] font-semibold">
+            <span className="h-3 w-6 rounded" style={{ background: b.bg }} />
+            {b.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Twenty-four columns will not fit a phone and should not be squeezed
+          into one — the grid keeps its cell size and scrolls. */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[900px]">
+          <div className="mb-1 flex gap-1">
+            <div className="w-16 shrink-0 text-[11px] font-bold text-faint">Date</div>
+            {colLabels.map((c) => (
+              <div
+                key={c}
+                className="flex-1 text-center text-[10px] leading-tight whitespace-nowrap text-faint"
+              >
+                {c}
+              </div>
+            ))}
+          </div>
+          {rows.map((r) => (
+            <div key={r.day} className="mb-1 flex items-stretch gap-1">
+              <div className="w-16 shrink-0 self-center text-[11px] leading-tight font-bold text-muted">
+                {r.weekday}
+                <br />
+                <span className="font-semibold text-faint">({r.date})</span>
+              </div>
+              {r.values.map((v, h) => {
+                const band = bandOf(v);
+                return (
+                  <div
+                    key={h}
+                    className={`flex h-9 flex-1 items-center justify-center rounded-lg text-[10px] font-bold tabular-nums ${band.text}`}
+                    style={{ background: band.bg }}
+                    title={`${r.weekday} ${r.date}, ${colLabels[h]}: ${format(v)}`}
+                  >
+                    {v ? format(v) : ""}
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
-        {rows.map((row, i) => (
-          <div key={rowLabels[i]} className="mb-1 flex items-center gap-1">
-            <div className="w-8 shrink-0 text-[10px] font-bold text-muted">{rowLabels[i]}</div>
-            {row.map((v, j) => (
-              <div
-                key={colLabels[j]}
-                className="h-7 flex-1 rounded bg-accent"
-                style={{ opacity: 0.06 + (v / max) * 0.94 }}
-                title={`${rowLabels[i]} ${colLabels[j]}: ${fmt(v)}`}
-              />
-            ))}
-          </div>
-        ))}
       </div>
     </div>
   );

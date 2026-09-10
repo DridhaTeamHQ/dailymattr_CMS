@@ -26,7 +26,7 @@ import {
   DataTable,
   GhostButton,
   GroupedAxisChart,
-  Heatmap,
+  HourHeatmap,
   KpiCard,
   Panel,
   PillTabs,
@@ -47,10 +47,11 @@ import {
   CONTENT_TYPES,
   CONTENT_TYPE_LABEL,
   COVERAGE,
-  DAY_LABELS,
   EDITOR_ROWS,
   EDITORIAL,
-  HEATMAP,
+  HEATMAP_DAYS,
+  HOURLY_ROWS,
+  HOUR_LABELS,
   KPI,
   LATEST_DAY,
   LATEST_WEEK,
@@ -747,15 +748,30 @@ export default function AudiencePage() {
         />
       </div>
 
+      {/* Full width: twenty-four columns in two thirds of a row would have
+          been a scrollbar wrapped around a grid nobody could read. */}
+      <div className="mb-6">
+        <Panel
+          title="When readers are here"
+          note={`Active devices by date and hour, newest day first, over the last ${HEATMAP_DAYS} days. Split out of the same window rows the DAU charts are drawn from, so an hour is part of its window rather than a second opinion about it.`}
+        >
+          <HourHeatmap rows={HOURLY_ROWS} colLabels={HOUR_LABELS} />
+        </Panel>
+      </div>
+
+      {/* Permission used to sit in this row. It moved down to the notification
+          section, where the question it answers is being asked. */}
       <div className="mb-6 grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Panel
-            title="When readers are here"
-            note="Day of week against window, shaded by active devices. Read from the same rows as the DAU table above, so the two cannot disagree."
-          >
-            <Heatmap rows={HEATMAP} rowLabels={DAY_LABELS} colLabels={TIME_SECTIONS} />
-          </Panel>
-        </div>
+        <Panel title="By state" note="Where readers open the app.">
+          <BarList rows={BY_STATE.map((r) => ({ name: r.name, value: r.users }))} />
+        </Panel>
+        <Panel title="By city" note="Inferred, so treat the tail as noisy.">
+          <BarList
+            rows={BY_CITY.map((r) => ({ name: r.name, value: r.users }))}
+            tone="bg-violet"
+          />
+        </Panel>
+        {/* Moved out of the heatmap's row when that went full width. */}
         <Panel
           title="Rating spread"
           note="The average hides the shape. One-star reviews are the ones with text worth reading."
@@ -770,20 +786,6 @@ export default function AudiencePage() {
           <p className="mt-3 text-[11px] text-faint">
             {RATING.score.toFixed(1)} average across {fmt(RATING.count)} ratings.
           </p>
-        </Panel>
-      </div>
-
-      {/* Permission used to sit in this row. It moved down to the notification
-          section, where the question it answers is being asked. */}
-      <div className="mb-6 grid gap-5 lg:grid-cols-2">
-        <Panel title="By state" note="Where readers open the app.">
-          <BarList rows={BY_STATE.map((r) => ({ name: r.name, value: r.users }))} />
-        </Panel>
-        <Panel title="By city" note="Inferred, so treat the tail as noisy.">
-          <BarList
-            rows={BY_CITY.map((r) => ({ name: r.name, value: r.users }))}
-            tone="bg-violet"
-          />
         </Panel>
       </div>
 

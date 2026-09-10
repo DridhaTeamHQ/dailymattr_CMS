@@ -286,19 +286,67 @@ export const INTERACTION_ROWS: InteractionRow[] = DAU_ROWS.map((r) => {
   };
 });
 
-export const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** How many dated rows the activity grid shows. */
+export const HEATMAP_DAYS = 7;
 
-/** Day-of-week × window, active devices, from the last seven days of rows. */
-export const HEATMAP: number[][] = DAY_LABELS.map((_, dow) =>
-  TIME_SECTIONS.map((s) => {
-    const rows = DAU_ROWS.filter(
-      (r) => (new Date(r.day + "T00:00:00Z").getUTCDay() + 6) % 7 === dow && r.section === s
-    );
-    return rows.length
-      ? Math.round(rows.reduce((a, r) => a + r.registeredDau, 0) / rows.length)
-      : 0;
-  })
-);
+/** "12 AM" … "11 PM", the grid's columns. */
+export const HOUR_LABELS: string[] = Array.from({ length: 24 }, (_, h) => {
+  const twelve = h % 12 === 0 ? 12 : h % 12;
+  return `${twelve} ${h < 12 ? "AM" : "PM"}`;
+});
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export interface HourRow {
+  /** ISO date. */
+  day: string;
+  /** "Thu" */
+  weekday: string;
+  /** "Sep 10" */
+  date: string;
+  /** 24 figures, midnight first. */
+  values: number[];
+}
+
+/**
+ * Active devices by date and hour, newest date first.
+ *
+ * Dated rows rather than a day-of-week average. An average Tuesday is a useful
+ * thing to know and a different question from "what happened on Tuesday" — and
+ * the desk reads this one after a push went out, which is a date.
+ *
+ * The hours are split out of the window figures rather than generated beside
+ * them, so an hour is a real part of the window it sits in and the grid cannot
+ * drift from the charts above it. Each window is exactly three hours wide now,
+ * which is what makes the split clean — before the overnight bucket was split
+ * in two, one of them was six.
+ */
+export const HOURLY_ROWS: HourRow[] = (() => {
+  const bySection = new Map(DAU_ROWS.map((r) => [`${r.day}|${r.section}`, r.registeredDau]));
+  const days = [...new Set(DAU_ROWS.map((r) => r.day))].sort().slice(-HEATMAP_DAYS).reverse();
+
+  return days.map((day) => {
+    const d = new Date(day + "T00:00:00Z");
+    const values = Array.from({ length: 24 }, (_, h) => {
+      const section = TIME_SECTIONS[Math.floor(h / 3)];
+      const total = bySection.get(`${day}|${section}`) ?? 0;
+      /* The window's three hours share it unevenly but stably: readers do not
+         arrive in equal thirds, and a flat split would draw three identical
+         columns everywhere and say nothing. Normalised, so the three add back
+         up to the window. */
+      const w = [0, 1, 2].map((k) => 0.6 + hash01("hour", day, section, String(k)) * 0.8);
+      const sum = w[0] + w[1] + w[2];
+      return Math.round((total * w[h % 3]) / sum);
+    });
+    return {
+      day,
+      weekday: WEEKDAY[d.getUTCDay()],
+      date: `${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`,
+      values,
+    };
+  });
+})();
 
 /* ───────────────────────── notifications ──────────────────────────── */
 
