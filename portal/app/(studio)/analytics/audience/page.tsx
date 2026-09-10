@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Activity,
-  Bell,
   BellRing,
   Check,
   ChevronRight,
@@ -812,11 +811,11 @@ export default function AudiencePage() {
         denominator has no open rate.
       </p>
 
-      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {/* Two of these four count sends and mean different things by it —
-            one counts phones, the other counts stories — and "Sent" beside
-            "Broadcasts" left the reader to work out which was which. Both say
-            what they are counting now. */}
+      {/* Three, not four. A "Pushes sent" tile counted the broadcasts, which
+          the topic panel below now breaks down properly — and next to a
+          recipient count in the millions a bare 12 asked to be misread. The
+          Sent tile keeps its hint, since it is what the number is. */}
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Stat
           label="Sent"
           value={PUSH_SUMMARY.sent}
@@ -831,13 +830,6 @@ export default function AudiencePage() {
           hint="Of FCM-accepted recipients"
           icon={Gauge}
           tone="violet"
-        />
-        <Stat
-          label="Pushes sent"
-          value={NOTIFICATIONS.length}
-          hint={`Distinct stories, last ${WINDOW_DAYS} days`}
-          icon={Bell}
-          tone="amber"
         />
       </div>
 
