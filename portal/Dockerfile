@@ -28,10 +28,16 @@ ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_NEWSSTUDIO_URL
 ARG NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY
+# Optional, unlike the four above — unset means the full CMS, which is the
+# normal build. Set it to "true" to ship a build that shows only the audience
+# analytics. It is checked into the bundle like the rest, so changing it on
+# Railway needs a redeploy rather than a restart.
+ARG NEXT_PUBLIC_ANALYTICS_ONLY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_NEWSSTUDIO_URL=$NEXT_PUBLIC_NEWSSTUDIO_URL \
     NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY=$NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY \
+    NEXT_PUBLIC_ANALYTICS_ONLY=$NEXT_PUBLIC_ANALYTICS_ONLY \
     NEXT_TELEMETRY_DISABLED=1
 
 # Fail here, not forty seconds into `next build`.

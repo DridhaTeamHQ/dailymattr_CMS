@@ -34,6 +34,19 @@ container, so all three are just installed.
 | `NEXT_PUBLIC_NEWSSTUDIO_URL` | `https://ygxdrphajvrbjcaxhvcn.supabase.co` |
 | `NEXT_PUBLIC_NEWSSTUDIO_ANON_KEY` | publishable key for the pipeline project |
 
+Optional:
+
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_ANALYTICS_ONLY` | `true` ships a build showing only the audience analytics |
+
+Leave it unset for the full CMS. Set to `true` and the sidebar carries one
+entry, every other studio route redirects to `/analytics/audience`, and signing
+in lands there — for showing the analytics without the rest of the product
+around it. It hides; it does not secure. The pages are still in the build, and
+turning the flag off serves them again to whoever could reach them before, so
+do not use it in place of a role.
+
 These are read by `next build`, not at runtime — the values are compiled into the
 browser bundle. Set them **before** the build runs. They are publishable keys and
 are meant to be in the browser; RLS is what protects the data.

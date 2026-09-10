@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { can, useAuth } from "@/lib/auth";
+import { ANALYTICS_HOME, ANALYTICS_ONLY, HOME } from "@/lib/mode";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -39,9 +40,15 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   if (!user) return null;
 
+  /* One entry in analytics-only mode, pointed straight at the audience page
+     rather than at the analytics index it normally opens. */
+  const nav = ANALYTICS_ONLY
+    ? [{ href: ANALYTICS_HOME, label: "Audience", icon: BarChart3, gate: "seeStats" as const }]
+    : NAV;
+
   return (
     <aside className="sticky top-4 md:top-6 mt-4 md:mt-6 z-40 flex h-[calc(100vh-2rem)] md:h-[calc(100vh-3rem)] w-[86px] shrink-0 self-start flex-col items-center rounded-[2rem] bg-shell py-6 shadow-(--shadow-lift)">
-      <Link href="/dashboard" className="mb-8 block" title="DailyMattr Studio">
+      <Link href={HOME} className="mb-8 block" title="DailyMattr Studio">
         {/* Pinned to the brand blue rather than the accent token: dark mode
             lightens the accent for legibility on dark surfaces, which drops the
             white letter here to 2.97:1. The logo is the one place the colour
@@ -65,7 +72,7 @@ export default function Sidebar() {
        * a far better trade than a sign-out button hanging off the end. The
        * native title attribute still names every item either way. */}
       <nav className="sidebar-nav flex flex-1 flex-col items-center gap-2 [@media(max-height:720px)]:min-h-0 [@media(max-height:720px)]:overflow-y-auto">
-        {NAV.filter((n) => !n.gate || can[n.gate](user.role)).map((n) => {
+        {nav.filter((n) => !n.gate || can[n.gate](user.role)).map((n) => {
           const active =
             pathname === n.href || pathname.startsWith(n.href + "/");
           const Icon = n.icon;

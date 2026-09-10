@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ROLE_META, type Role } from "@/lib/types";
+import { HOME } from "@/lib/mode";
 
 const ROLES: Role[] = ["super_admin", "chief_editor", "writer", "qa"];
 
@@ -22,7 +23,7 @@ export default function LoginPage() {
   const [googleBusy, setGoogleBusy] = useState(false);
 
   useEffect(() => {
-    if (ready && user) router.replace("/dashboard");
+    if (ready && user) router.replace(HOME);
   }, [ready, user, router]);
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     const res = await login(email, password, role);
-    if (res.ok) router.replace("/dashboard");
+    if (res.ok) router.replace(HOME);
     else {
       setError(res.error);
       setBusy(false);

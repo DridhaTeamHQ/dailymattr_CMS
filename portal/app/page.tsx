@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { HOME } from "@/lib/mode";
 
 export default function Home() {
   const { user, ready } = useAuth();
@@ -10,7 +11,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready) return;
-    router.replace(user ? "/dashboard" : "/login");
+    router.replace(user ? HOME : "/login");
   }, [ready, user, router]);
 
   return (

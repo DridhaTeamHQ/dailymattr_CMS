@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import { useAuth } from "@/lib/auth";
+import { ANALYTICS_HOME, allowedPath } from "@/lib/mode";
 
 export default function PortalLayout({
   children,
@@ -18,10 +19,20 @@ export default function PortalLayout({
   const pathname = usePathname();
 
   useEffect(() => {
-    if (ready && !user) router.replace("/login");
-  }, [ready, user, router]);
+    if (!ready) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    /* Analytics-only mode: everything else in the studio sends you to the one
+       page on offer. Presentation, not security — the routes are still there,
+       and a build with the flag off serves them again. */
+    if (!allowedPath(pathname)) router.replace(ANALYTICS_HOME);
+  }, [ready, user, router, pathname]);
 
-  if (!ready || !user) {
+  /* Held on the spinner rather than flashing the page that is about to be
+     redirected away from. */
+  if (!ready || !user || !allowedPath(pathname)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-3 border-line border-t-accent" />

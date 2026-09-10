@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { HOME } from "@/lib/mode";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -21,7 +22,7 @@ export default function AuthCallbackPage() {
         return;
       }
       if (data.session && mounted) {
-        router.replace("/dashboard");
+        router.replace(HOME);
       }
     };
 
@@ -29,7 +30,7 @@ export default function AuthCallbackPage() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && mounted) {
-        router.replace("/dashboard");
+        router.replace(HOME);
       }
     });
 
@@ -53,7 +54,7 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     if (ready && user) {
-      router.replace("/dashboard");
+      router.replace(HOME);
     }
   }, [ready, user, router]);
 
