@@ -809,7 +809,17 @@ export default function AudiencePage() {
       </p>
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Sent" value={PUSH_SUMMARY.sent} icon={Send} tone="accent" />
+        {/* Two of these four count sends and mean different things by it —
+            one counts phones, the other counts stories — and "Sent" beside
+            "Broadcasts" left the reader to work out which was which. Both say
+            what they are counting now. */}
+        <Stat
+          label="Sent"
+          value={PUSH_SUMMARY.sent}
+          hint="Recipient devices, across every push"
+          icon={Send}
+          tone="accent"
+        />
         <Stat label="Opened" value={PUSH_SUMMARY.opened} icon={BellRing} tone="mint" />
         <Stat
           label="Open rate"
@@ -819,9 +829,9 @@ export default function AudiencePage() {
           tone="violet"
         />
         <Stat
-          label="Broadcasts"
+          label="Pushes sent"
           value={NOTIFICATIONS.length}
-          hint={`Last ${WINDOW_DAYS} days`}
+          hint={`Distinct stories, last ${WINDOW_DAYS} days`}
           icon={Bell}
           tone="amber"
         />
@@ -856,7 +866,7 @@ export default function AudiencePage() {
 
       <div className="mb-6">
         <Panel
-          title="Recent broadcasts"
+          title="Recent pushes"
           note="One row per send, newest first. The spread between a tight topical push and a broad one is the reason this is a list rather than an average."
         >
           <DataTable<NotificationRow>
