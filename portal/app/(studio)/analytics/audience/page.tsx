@@ -386,7 +386,10 @@ export default function AudiencePage() {
     "views" | "likes" | "comments" | "shares" | "saves" | "aiQuestions"
   >("likes");
   /** Publishing splits by product as well as by time. */
-  const [contentType, setContentType] = useState<ContentType | "all">("all");
+  /* Pix by default rather than everything: the tab's chart is one product's
+     categories, and "all products" sums seven shapes into one that is none of
+     them. Pix is the one the desk files most deliberately by topic. */
+  const [contentType, setContentType] = useState<ContentType | "all">("pix");
   /** Bumping this re-mounts the section, which is what "Refresh" means here. */
   const [nonce, setNonce] = useState(0);
 
@@ -586,14 +589,21 @@ export default function AudiencePage() {
         <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
         <div className="mt-4 mb-3 flex flex-wrap items-center gap-3">
-          {/* One resolution control for every tab in this card. Notifications
-              have their own, down in their own section. */}
-          <Segmented
-            label="View"
-            options={GRANULARITIES}
-            value={main.grain}
-            onChange={main.chooseGrain}
-          />
+          {/* One resolution control for the two tabs that have a time axis.
+              Notifications have their own, down in their own section.
+
+              Publishing no longer draws one: its chart is categories across
+              the bottom for a single product, so a control that chose between
+              days and weeks would be choosing the shape of an axis that is
+              not there. */}
+          {tab !== "publishing" && (
+            <Segmented
+              label="View"
+              options={GRANULARITIES}
+              value={main.grain}
+              onChange={main.chooseGrain}
+            />
+          )}
 
           {/* Publishing has no reading windows to filter by — an item is filed
               on a day, not at an hour — so the control is not offered there
@@ -614,11 +624,11 @@ export default function AudiencePage() {
 
           {tab === "publishing" && (
             <Select
-              label="Content type"
+              label="Product"
               value={contentType}
               onChange={setContentType}
               options={[
-                { key: "all" as const, label: "All types" },
+                { key: "all" as const, label: "All products" },
                 ...CONTENT_TYPES.map((t) => ({ key: t, label: CONTENT_TYPE_LABEL[t] })),
               ]}
             />
@@ -666,14 +676,20 @@ export default function AudiencePage() {
           onKeys={setRegionKeys}
         />
 
-        <div className="mt-4">
-          <Breadcrumb drill={main.drill} onDrill={main.chooseDrill} />
-        </div>
+        {/* The crumb walks back out of an opened week or day, so it belongs to
+            the tabs that can open one. Publishing counts its whole range. */}
+        {tab !== "publishing" && (
+          <>
+            <div className="mt-4">
+              <Breadcrumb drill={main.drill} onDrill={main.chooseDrill} />
+            </div>
 
-        <p className="mb-4 text-[11px] text-faint">
-          {grainNote(main.view)}
-          {levelOf(main.view.grain) && " Click a bar to open it."}
-        </p>
+            <p className="mb-4 text-[11px] text-faint">
+              {grainNote(main.view)}
+              {levelOf(main.view.grain) && " Click a bar to open it."}
+            </p>
+          </>
+        )}
 
         {tab === "dau" && (
           <DauTab
@@ -695,7 +711,6 @@ export default function AudiencePage() {
         )}
         {tab === "publishing" && (
           <PublishingTab
-            view={main.view}
             contentType={contentType}
             series={regionSeries}
           />
@@ -2053,35 +2068,35 @@ function EngagementTab({
   );
 }
 
+/**
+ * What the desk published, by category, one product at a time.
+ *
+ * This drew a time axis — a bar per day or week, every product stacked into
+ * one count. That answered "how much are we filing", which the tiles above
+ * already say, and buried the question the tab is named for: what a product
+ * is actually about. Categories across the bottom and one product at a time
+ * answers it directly, and switching the product redraws the same axis so two
+ * products can be compared by eye rather than by memory.
+ *
+ * It counts the whole range. There is no time axis left to open, so there is
+ * nothing to drill into and no week or day to be scoped to.
+ */
 function PublishingTab({
-  view,
   contentType,
   series,
 }: {
-  view: ViewState;
   contentType: ContentType | "all";
   series: RegionSeries[];
 }) {
   /* One region narrows the library to what was filed for it; several leave
      this on everything, because the comparison is drawn per region below. */
   const primaryRegion = series.length === 1 ? series[0].key : null;
-  const rows = useMemo(() => {
+  const scoped = useMemo(() => {
     const base = publishingRowsForRegion(primaryRegion);
     return contentType === "all"
       ? base
       : base.filter((r) => r.contentType === contentType);
   }, [contentType, primaryRegion]);
-
-  const { drill } = view;
-  const scoped = useMemo(() => scope(rows, drill), [rows, drill]);
-
-  /* Publishing has no reading windows to fall into — an item is filed on a
-     day, not at an hour — so its last level is "what went out", by product.
-     Weeks and days above it behave like every other tab. */
-  const weekly = !drill.day && view.grain === "weekly";
-  const overall = !drill.day && view.grain === "overall";
-  const level: Level | null =
-    drill.day || overall ? null : weekly ? "weekly" : "daily";
 
   const compare = series.length > 1;
 
@@ -2103,48 +2118,24 @@ function PublishingTab({
     const filtered =
       contentType === "all" ? base : base.filter((r) => r.contentType === contentType);
     const acc = new Map<string, number>();
-    for (const r of scope(filtered, drill)) {
-      const k = drill.day
-        ? r.contentType
-        : overall
-          ? "overall"
-          : weekly
-            ? r.week
-            : r.day;
-      acc.set(k, (acc.get(k) ?? 0) + r.count);
-    }
+    for (const r of filtered) acc.set(r.category, (acc.get(r.category) ?? 0) + r.count);
     return acc;
   };
 
+  /* Every category, in one fixed order, whether or not this product has
+     anything in it. A product that has never been filed under Sports should
+     show an empty column there rather than an axis that silently drops it —
+     and the axis has to stay put as the product changes, or two products
+     cannot be compared by flicking between them. */
   const points = useMemo<Point[]>(() => {
-    if (drill.day) {
-      const acc = new Map<string, number>();
-      for (const r of scoped) acc.set(r.contentType, (acc.get(r.contentType) ?? 0) + r.count);
-      return CONTENT_TYPES.filter((t) => acc.has(t)).map((t) => ({
-        key: t,
-        label: CONTENT_TYPE_LABEL[t],
-        value: acc.get(t) ?? 0,
-      }));
-    }
-    /* Publishing is a count of items filed, so the whole range is simply their
-       sum — there is no per-reader figure here to average instead. */
-    if (overall) {
-      const total = scoped.reduce((a, r) => a + r.count, 0);
-      return [{ key: "overall", label: "Overall", value: total }];
-    }
     const acc = new Map<string, number>();
-    for (const r of scoped) {
-      const k = weekly ? r.week : r.day;
-      acc.set(k, (acc.get(k) ?? 0) + r.count);
-    }
-    return [...acc.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => ({
-        key,
-        label: weekly ? `w/c ${key.slice(5)}` : key.slice(5),
-        value,
-      }));
-  }, [scoped, weekly, overall, drill.day]);
+    for (const r of scoped) acc.set(r.category, (acc.get(r.category) ?? 0) + r.count);
+    return CATEGORIES.map((name) => ({
+      key: name,
+      label: name,
+      value: acc.get(name) ?? 0,
+    }));
+  }, [scoped]);
 
   /* Clicking a bar in "By product" asks what that product is made of, which
      is the question the panel beside it already answers for everything. So it
@@ -2190,16 +2181,11 @@ function PublishingTab({
   return (
     <>
       <p className="mb-3 text-[12px] text-faint">
-        Publishing history,{" "}
-        {drill.day
-          ? "by product"
-          : overall
-            ? "for the whole range"
-            : weekly
-              ? "by week"
-              : "by day"}
-        . Counts every
-        item that reached readers across all seven products.
+        {contentType === "all"
+          ? "Every product, by category, across the whole range."
+          : `${CONTENT_TYPE_LABEL[contentType]} by category, across the whole range.`}{" "}
+        Counts every item that reached readers. Switch product above to redraw
+        the same axis.
       </p>
       {cityNote && (
         <p className="mb-3 text-[12px] text-amber">{cityNote}</p>
@@ -2208,8 +2194,8 @@ function PublishingTab({
         <GroupedAxisChart
           labels={points.map((p) => p.label)}
           /* Keyed off the shared points so every region lines up against one
-             axis — a region that filed nothing on a day contributes a zero
-             rather than shifting the bars along. */
+             axis — a region that filed nothing in a category contributes a
+             zero rather than shifting the bars along. */
           series={series.map((sr) => {
             const acc = countsFor(sr.key);
             return {
@@ -2218,14 +2204,16 @@ function PublishingTab({
               values: points.map((p) => acc.get(p.key) ?? 0),
             };
           })}
-          onSelect={selector(view, points, level)}
+          height={320}
+          angledLabels
         />
       ) : (
         <AxisBarChart
           labels={points.map((p) => p.label)}
           values={points.map((p) => p.value)}
           name="Published"
-          onSelect={selector(view, points, level)}
+          height={320}
+          angledLabels
         />
       )}
       {compare && (
@@ -2266,7 +2254,6 @@ function PublishingTab({
             <span>
               By category
               {contentType !== "all" && ` · ${CONTENT_TYPE_LABEL[contentType]} only`}
-              {drill.day ? ` · ${drill.day}` : drill.week ? ` · w/c ${drill.week}` : ""}
             </span>
             {focusType && (
               <button

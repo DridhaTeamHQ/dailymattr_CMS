@@ -513,37 +513,45 @@ export const NOTIFICATION_BY_SECTION: NotificationSectionRow[] = Array.from(
 /* ─────────────────────────── publishing ───────────────────────────── */
 
 /**
- * Everything the desk files. Polls and live updates are low-volume but they
- * are separate products with their own workflow, so they get their own row
- * rather than being folded into "article" and disappearing.
+ * Everything the desk files, named the way the app names it.
+ *
+ * These used to be generic publishing words — News article, Video, Audio,
+ * Magazine, Live update — which are not the products DailyMattr actually
+ * ships. Nobody on the desk files a "Video"; they file a Qix. Reporting that
+ * uses different nouns from the app is reporting somebody has to translate
+ * before they can act on it.
+ *
+ * Polls and Xplaind are low-volume but they are separate products with their
+ * own workflow, so they get their own row rather than being folded into
+ * Articles and disappearing.
  */
 export type ContentType =
   | "article"
+  | "pix"
+  | "qix"
+  | "trax"
   | "buzz"
-  | "video"
-  | "audio"
-  | "magazine"
   | "poll"
-  | "live";
+  | "xplaind";
 
 export const CONTENT_TYPES: ContentType[] = [
   "article",
+  "pix",
+  "qix",
+  "trax",
   "buzz",
-  "video",
-  "audio",
-  "magazine",
   "poll",
-  "live",
+  "xplaind",
 ];
 
 export const CONTENT_TYPE_LABEL: Record<ContentType, string> = {
-  article: "News article",
+  article: "Articles",
+  pix: "Pix",
+  qix: "Qix",
+  trax: "Trax",
   buzz: "Buzz",
-  video: "Video",
-  audio: "Audio",
-  magazine: "Magazine",
-  poll: "Poll",
-  live: "Live update",
+  poll: "Polls",
+  xplaind: "Xplaind",
 };
 
 export const CATEGORIES = [
@@ -588,11 +596,11 @@ export const PUBLISHING_ROWS: PublishingRow[] = Array.from({ length: 90 }, (_, k
     const DRAW: ContentType[] = [
       "buzz", "buzz", "buzz", "buzz",
       "article", "article", "article",
-      "video", "video",
-      "audio",
-      "magazine",
+      "pix", "pix", "pix",
+      "qix", "qix",
+      "trax",
       "poll",
-      "live",
+      "xplaind",
     ];
     const contentType = DRAW[between(0, DRAW.length - 1)];
     const category = CATEGORIES[between(0, CATEGORIES.length - 1)];

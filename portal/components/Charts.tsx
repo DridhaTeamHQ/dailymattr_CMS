@@ -199,6 +199,7 @@ export function AxisBarChart({
   format = (n: number) => fmt(n),
   name,
   onSelect,
+  angledLabels = false,
 }: {
   labels: readonly string[];
   values: number[];
@@ -209,6 +210,15 @@ export function AxisBarChart({
   name?: string;
   /** When given, bars become clickable and drill one level down. */
   onSelect?: (index: number) => void;
+  /**
+   * Turn every label on its side and keep all of them.
+   *
+   * Dates thin out happily — a reader who can see 08-26 and 08-30 fills in
+   * what is between them. Category names do not: a missing one is a category
+   * the chart appears not to have, so an axis of words shows all of them or
+   * misleads. Costs vertical room, which is why it is not the default.
+   */
+  angledLabels?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
 
@@ -219,7 +229,7 @@ export function AxisBarChart({
   const padL = 48;
   const padR = 12;
   const padT = 12;
-  const padB = 34;
+  const padB = angledLabels ? 96 : 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const n = Math.max(values.length, 1);
@@ -231,7 +241,7 @@ export function AxisBarChart({
   /* Dense x axes thin their labels rather than overlapping them. Eight is
      what fits across 1000 units once a label reads "08-26 6am-9am"; twelve
      collided into an unreadable smear. */
-  const every = Math.max(1, Math.ceil(labels.length / 8));
+  const every = angledLabels ? 1 : Math.max(1, Math.ceil(labels.length / 8));
 
   return (
     <div className="relative">
@@ -295,17 +305,29 @@ export function AxisBarChart({
                 className={tone}
                 opacity={hover === null || active ? 1 : 0.55}
               />
-              {i % every === 0 && (
-                <text
-                  x={padL + slot * i + slot / 2}
-                  y={H - 12}
-                  textAnchor="middle"
-                  className="fill-faint"
-                  fontSize={11}
-                >
-                  {labels[i]}
-                </text>
-              )}
+              {i % every === 0 &&
+                (angledLabels ? (
+                  <text
+                    x={padL + slot * i + slot / 2}
+                    y={padT + plotH + 14}
+                    textAnchor="end"
+                    className="fill-faint"
+                    fontSize={12}
+                    transform={`rotate(-45 ${padL + slot * i + slot / 2} ${padT + plotH + 14})`}
+                  >
+                    {labels[i]}
+                  </text>
+                ) : (
+                  <text
+                    x={padL + slot * i + slot / 2}
+                    y={H - 12}
+                    textAnchor="middle"
+                    className="fill-faint"
+                    fontSize={11}
+                  >
+                    {labels[i]}
+                  </text>
+                ))}
             </g>
           );
         })}
@@ -336,12 +358,15 @@ export function GroupedAxisChart({
   series,
   height = 220,
   onSelect,
+  angledLabels = false,
 }: {
   labels: readonly string[];
   series: { name: string; tone: string; values: number[] }[];
   height?: number;
   /** When given, a group becomes clickable and drills one level down. */
   onSelect?: (index: number) => void;
+  /** See AxisBarChart: an axis of words shows every label or misleads. */
+  angledLabels?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const STEPS = 4;
@@ -351,13 +376,13 @@ export function GroupedAxisChart({
   const padL = 48;
   const padR = 12;
   const padT = 12;
-  const padB = 34;
+  const padB = angledLabels ? 96 : 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const slot = plotW / Math.max(labels.length, 1);
   const inner = slot * 0.74;
   const barW = inner / series.length;
-  const every = Math.max(1, Math.ceil(labels.length / 8));
+  const every = angledLabels ? 1 : Math.max(1, Math.ceil(labels.length / 8));
 
   return (
     <div className="relative">
@@ -417,10 +442,15 @@ export function GroupedAxisChart({
             {i % every === 0 && (
               <text
                 x={padL + slot * i + slot / 2}
-                y={H - 12}
-                textAnchor="middle"
+                y={angledLabels ? padT + plotH + 14 : H - 12}
+                textAnchor={angledLabels ? "end" : "middle"}
                 className="fill-faint"
-                fontSize={11}
+                fontSize={angledLabels ? 12 : 11}
+                transform={
+                  angledLabels
+                    ? `rotate(-45 ${padL + slot * i + slot / 2} ${padT + plotH + 14})`
+                    : undefined
+                }
               >
                 {label}
               </text>
