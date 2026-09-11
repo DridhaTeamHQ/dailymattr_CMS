@@ -2205,6 +2205,7 @@ function PublishingTab({
             };
           })}
           height={320}
+          valueLabels
           angledLabels
         />
       ) : (
@@ -2213,6 +2214,7 @@ function PublishingTab({
           values={points.map((p) => p.value)}
           name="Published"
           height={320}
+          valueLabels
           angledLabels
         />
       )}

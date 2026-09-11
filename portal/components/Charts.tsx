@@ -199,6 +199,7 @@ export function AxisBarChart({
   format = (n: number) => fmt(n),
   name,
   onSelect,
+  valueLabels = false,
   angledLabels = false,
 }: {
   labels: readonly string[];
@@ -210,6 +211,15 @@ export function AxisBarChart({
   name?: string;
   /** When given, bars become clickable and drill one level down. */
   onSelect?: (index: number) => void;
+  /**
+   * Print each bar's figure above it.
+   *
+   * The axis answers "how many" to within a gridline; this answers it exactly,
+   * without hovering. Worth the ink on a short axis of named columns, where
+   * the reader wants the number to quote. Not on a dense one, where the labels
+   * would collide — hence opt-in.
+   */
+  valueLabels?: boolean;
   /**
    * Turn every label on its side and keep all of them.
    *
@@ -228,7 +238,9 @@ export function AxisBarChart({
   const H = height;
   const padL = 48;
   const padR = 12;
-  const padT = 12;
+  // Headroom for the figures: a bar that reaches the axis top would otherwise
+  // have its own number clipped off the viewBox.
+  const padT = valueLabels ? 24 : 12;
   const padB = angledLabels ? 96 : 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -305,6 +317,19 @@ export function AxisBarChart({
                 className={tone}
                 opacity={hover === null || active ? 1 : 0.55}
               />
+              {valueLabels && (
+                <text
+                  x={x + barW / 2}
+                  y={y - 6}
+                  textAnchor="middle"
+                  className={v > 0 ? "fill-muted" : "fill-faint"}
+                  fontSize={12}
+                  fontWeight={700}
+                  opacity={hover === null || active ? 1 : 0.55}
+                >
+                  {format(v)}
+                </text>
+              )}
               {i % every === 0 &&
                 (angledLabels ? (
                   <text
@@ -358,6 +383,7 @@ export function GroupedAxisChart({
   series,
   height = 220,
   onSelect,
+  valueLabels = false,
   angledLabels = false,
 }: {
   labels: readonly string[];
@@ -365,6 +391,12 @@ export function GroupedAxisChart({
   height?: number;
   /** When given, a group becomes clickable and drills one level down. */
   onSelect?: (index: number) => void;
+  /**
+   * See AxisBarChart. Grouped bars are narrower than single ones, so a figure
+   * that will not fit inside its own bar's width is dropped rather than drawn
+   * over its neighbour — the tooltip still has it.
+   */
+  valueLabels?: boolean;
   /** See AxisBarChart: an axis of words shows every label or misleads. */
   angledLabels?: boolean;
 }) {
@@ -375,7 +407,7 @@ export function GroupedAxisChart({
   const H = height;
   const padL = 48;
   const padR = 12;
-  const padT = 12;
+  const padT = valueLabels ? 24 : 12;
   const padB = angledLabels ? 96 : 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -426,17 +458,35 @@ export function GroupedAxisChart({
             {series.map((s, j) => {
               const h = top ? (s.values[i] / top) * plotH : 0;
               const x = padL + slot * i + (slot - inner) / 2 + barW * j;
+              const text = fmt(s.values[i]);
+              /* ~5.2 units a glyph at fontSize 10, plus a glyph of air either
+                 side, is where two grouped figures stop touching. */
+              const fits = barW >= text.length * 5.2 + 6;
               return (
-                <rect
-                  key={s.name}
-                  x={x + 1}
-                  y={padT + plotH - h}
-                  width={Math.max(barW - 2, 1)}
-                  height={Math.max(h, s.values[i] > 0 ? 2 : 0)}
-                  rx={2}
-                  className={s.tone}
-                  opacity={hover === null || hover === i ? 1 : 0.55}
-                />
+                <g key={s.name}>
+                  <rect
+                    x={x + 1}
+                    y={padT + plotH - h}
+                    width={Math.max(barW - 2, 1)}
+                    height={Math.max(h, s.values[i] > 0 ? 2 : 0)}
+                    rx={2}
+                    className={s.tone}
+                    opacity={hover === null || hover === i ? 1 : 0.55}
+                  />
+                  {valueLabels && fits && (
+                    <text
+                      x={x + barW / 2}
+                      y={padT + plotH - h - 5}
+                      textAnchor="middle"
+                      className={s.values[i] > 0 ? "fill-muted" : "fill-faint"}
+                      fontSize={10}
+                      fontWeight={700}
+                      opacity={hover === null || hover === i ? 1 : 0.55}
+                    >
+                      {text}
+                    </text>
+                  )}
+                </g>
               );
             })}
             {i % every === 0 && (
