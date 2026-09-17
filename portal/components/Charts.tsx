@@ -153,16 +153,20 @@ export function Panel({
   title,
   note,
   right,
+  icon: Icon,
   children,
 }: {
   title: string;
   note?: string;
   right?: ReactNode;
+  /** Sits before the title, in the accent. Optional — most panels want none. */
+  icon?: React.ComponentType<{ size?: number; className?: string }>;
   children: ReactNode;
 }) {
   return (
     <div className="card p-5">
       <div className="mb-1 flex items-center gap-2">
+        {Icon && <Icon size={15} className="shrink-0 text-accent" />}
         <h2 className="text-sm font-bold">{title}</h2>
         {right && <div className="ml-auto">{right}</div>}
       </div>
@@ -182,6 +186,236 @@ function niceMax(max: number, steps = 4): number {
   const norm = rough / mag;
   const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
   return step * steps;
+}
+
+/**
+ * A smooth line through the points, as a path of cubic segments.
+ *
+ * Monotone cubic (Fritsch–Carlson), not a plain Catmull–Rom spline. The
+ * difference matters on a chart of real figures: an unconstrained spline
+ * overshoots on either side of a steep step, so a run of 90, 66, 68 is drawn
+ * dipping below 66 and a reader takes the lowest point on the curve for the
+ * lowest day. This one cannot invent a peak or a trough that is not in the
+ * data — between two points the curve stays between their values — while
+ * still reading as a curve rather than a dot-to-dot.
+ */
+function monotonePath(pts: { x: number; y: number }[]): string {
+  const n = pts.length;
+  if (n === 0) return "";
+  if (n === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  if (n === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+
+  /* Secant slope of each segment, then a tangent at each point that is
+     clamped so it never points away from its neighbours. */
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(pts[i + 1].x - pts[i].x);
+    slope.push((pts[i + 1].y - pts[i].y) / (pts[i + 1].x - pts[i].x));
+  }
+
+  const m: number[] = new Array(n);
+  m[0] = slope[0];
+  m[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    // A turning point gets a flat tangent, which is what stops the overshoot.
+    m[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / slope[i];
+    const b = m[i + 1] / slope[i];
+    const h = Math.hypot(a, b);
+    if (h > 3) {
+      m[i] = ((3 * a) / h) * slope[i];
+      m[i + 1] = ((3 * b) / h) * slope[i];
+    }
+  }
+
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < n - 1; i++) {
+    const c1x = pts[i].x + dx[i] / 3;
+    const c1y = pts[i].y + (m[i] * dx[i]) / 3;
+    const c2x = pts[i + 1].x - dx[i] / 3;
+    const c2y = pts[i + 1].y - (m[i + 1] * dx[i]) / 3;
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${pts[i + 1].x} ${pts[i + 1].y}`;
+  }
+  return d;
+}
+
+/**
+ * One series as a smooth line, with gridlines and a hover readout.
+ *
+ * A line rather than bars because the question is the shape of the run — is it
+ * climbing, is it flat, where did it turn — and a row of separate bars asks
+ * the reader to join them up themselves. Bars are for comparing one column
+ * against another; a line is for the trend between them.
+ */
+export function LineChart({
+  labels,
+  values,
+  name = "Value",
+  height = 300,
+  tone = "stroke-violet",
+  dot = "fill-violet",
+  format = (n: number) => fmt(n),
+  valueFormat = (n: number) => n.toLocaleString(),
+}: {
+  labels: readonly string[];
+  values: number[];
+  /** Named in the tooltip: "Active users : 84". */
+  name?: string;
+  height?: number;
+  tone?: string;
+  dot?: string;
+  /** The axis ticks, where "4k" is what a gridline wants to say. */
+  format?: (n: number) => string;
+  /**
+   * The tooltip, where it is not.
+   *
+   * A reader hovers a point to get the figure — to quote it, or to compare it
+   * with yesterday's. "2.5k" answers neither: it is the same four days running
+   * and rounds away the difference the hover was asking about.
+   */
+  valueFormat?: (n: number) => string;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  const STEPS = 4;
+  const top = niceMax(Math.max(...values, 0), STEPS);
+  const W = 1000;
+  const H = height;
+  const padL = 46;
+  const padR = 16;
+  const padT = 14;
+  const padB = 32;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const n = Math.max(values.length, 1);
+  /* Points sit on the edges rather than in the middle of a slot: a line's
+     first and last readings are dates, not buckets, and the axis should start
+     and end on them the way the labels do. */
+  const stepX = n > 1 ? plotW / (n - 1) : 0;
+
+  const pts = values.map((v, i) => ({
+    x: padL + stepX * i,
+    y: padT + plotH - (top ? (v / top) * plotH : 0),
+  }));
+  const path = monotonePath(pts);
+
+  const every = Math.max(1, Math.ceil(labels.length / 8));
+
+  return (
+    <div className="relative" onMouseLeave={() => setHover(null)}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height }}
+        role="img"
+        aria-label={name}
+      >
+        {Array.from({ length: STEPS + 1 }, (_, i) => {
+          const y = padT + plotH - (plotH * i) / STEPS;
+          return (
+            <g key={i}>
+              <line
+                x1={padL}
+                x2={W - padR}
+                y1={y}
+                y2={y}
+                className="stroke-line"
+                strokeDasharray="4 4"
+              />
+              <text
+                x={padL - 10}
+                y={y + 4}
+                textAnchor="end"
+                className="fill-faint"
+                fontSize={12}
+              >
+                {format((top * i) / STEPS)}
+              </text>
+            </g>
+          );
+        })}
+
+        <path
+          d={path}
+          fill="none"
+          className={tone}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {hover !== null && (
+          <g>
+            <line
+              x1={pts[hover].x}
+              x2={pts[hover].x}
+              y1={padT}
+              y2={padT + plotH}
+              className="stroke-line"
+            />
+            <circle cx={pts[hover].x} cy={pts[hover].y} r={4.5} className={dot} />
+          </g>
+        )}
+
+        {/* A column per reading, so the whole height of the chart is a target
+            and the pointer does not have to find a 2px line. */}
+        {values.map((_, i) => (
+          <rect
+            key={i}
+            x={padL + stepX * i - stepX / 2}
+            y={padT}
+            width={stepX || plotW}
+            height={plotH}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+          />
+        ))}
+
+        {labels.map((label, i) =>
+          i % every === 0 ? (
+            <text
+              key={label + i}
+              x={pts[i].x}
+              /* Pinned inside the box at both ends, or the first and last
+                 labels hang off the sides of the card. */
+              textAnchor={i === 0 ? "start" : i === labels.length - 1 ? "end" : "middle"}
+              y={H - 10}
+              className="fill-faint"
+              fontSize={12}
+            >
+              {label}
+            </text>
+          ) : null
+        )}
+      </svg>
+
+      {hover !== null && (
+        <div
+          className="pointer-events-none absolute rounded-xl border border-line bg-card px-3.5 py-2.5 text-[12px] shadow-(--shadow-pop)"
+          style={{
+            left: `${(pts[hover].x / W) * 100}%`,
+            top: `${((pts[hover].y + 18) / H) * 100}%`,
+            /* Flips to the other side near the right edge so the card is
+               never half off the panel. */
+            transform:
+              hover > values.length - 3 ? "translateX(-100%)" : "translateX(-8px)",
+          }}
+        >
+          <div className="font-semibold text-muted">{labels[hover]}</div>
+          <div className="mt-1 font-bold">
+            {name} : <span className="tabular-nums">{valueFormat(values[hover])}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**

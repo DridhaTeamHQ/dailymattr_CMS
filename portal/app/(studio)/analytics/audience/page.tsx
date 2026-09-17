@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Activity,
+  BarChart3,
   BellRing,
   Check,
   ChevronRight,
@@ -27,6 +28,7 @@ import {
   GroupedAxisChart,
   HourHeatmap,
   KpiCard,
+  LineChart,
   Panel,
   PillTabs,
   Segmented,
@@ -52,6 +54,7 @@ import {
   HOURLY_ROWS,
   HOUR_LABELS,
   KPI,
+  DAYS,
   LATEST_DAY,
   LATEST_WEEK,
   NOTIFICATIONS,
@@ -85,6 +88,7 @@ import {
   REGION_STATES,
   REGION_CITIES,
   notificationSectionRowsFor,
+  monthDay,
   regionsForScope,
   regionByKey,
   dauRowsForRegion,
@@ -108,6 +112,14 @@ import {
  */
 
 type Tab = "dau" | "engagement" | "publishing";
+
+/** How far back the trend line looks. */
+type TrendRange = "week" | "month";
+
+const TREND_RANGES: { key: TrendRange; label: string }[] = [
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+];
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dau", label: "DAU & time spent" },
@@ -377,6 +389,14 @@ function useTimeView() {
 export default function AudiencePage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("dau");
+  /* Its own control, not the tabbed card's: this panel sits above that card
+     and answers a different question, and a toggle that silently moved a chart
+     further down the page would be the sort of thing nobody notices. */
+  const [trendRange, setTrendRange] = useState<TrendRange>("week");
+  const trend = useMemo(
+    () => DAYS.slice(trendRange === "week" ? -7 : -30),
+    [trendRange]
+  );
   /** The tabbed card's own resolution, window filter and opened bar. */
   const main = useTimeView();
   /** Notifications carry theirs, so the two sections cannot move each other. */
@@ -571,6 +591,33 @@ export default function AudiencePage() {
           tone="rose"
           hint="Average time users stay engaged per session."
         />
+      </div>
+
+      {/* ── The run of days ───────────────────────────────────────────
+          Above the tabbed card on purpose: "is it going up" is the first
+          question anyone asks of this page, and it wants a line rather than a
+          tab, a window filter and a region picker in front of it. */}
+      <div className="mb-6">
+        <Panel
+          title="Daily Active Users Trend"
+          icon={BarChart3}
+          right={
+            <Segmented
+              options={TREND_RANGES}
+              value={trendRange}
+              onChange={setTrendRange}
+            />
+          }
+          note={`Active devices per day, ${
+            trendRange === "week" ? "the last 7 days" : "the last 30 days"
+          }. Everywhere, every window — the filters below belong to the card below.`}
+        >
+          <LineChart
+            labels={trend.map((d) => monthDay(d.date))}
+            values={trend.map((d) => d.dau)}
+            name="Active users"
+          />
+        </Panel>
       </div>
 
       {/* ── Tabbed day × window analytics ─────────────────────────────── */}

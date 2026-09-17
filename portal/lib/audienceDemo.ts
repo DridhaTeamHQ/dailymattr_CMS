@@ -298,6 +298,12 @@ export const HOUR_LABELS: string[] = Array.from({ length: 24 }, (_, h) => {
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** "Sep 11" — an axis label a person reads without decoding. */
+export const monthDay = (iso: string): string => {
+  const d = new Date(iso + "T00:00:00Z");
+  return `${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`;
+};
+
 export interface HourRow {
   /** ISO date. */
   day: string;
