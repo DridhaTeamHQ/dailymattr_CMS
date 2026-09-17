@@ -614,8 +614,13 @@ export default function AudiencePage() {
         >
           <LineChart
             labels={trend.map((d) => monthDay(d.date))}
-            values={trend.map((d) => d.dau)}
-            name="Active users"
+            series={[
+              {
+                name: "Active users",
+                tone: "stroke-violet",
+                values: trend.map((d) => d.dau),
+              },
+            ]}
           />
         </Panel>
       </div>
@@ -1607,17 +1612,25 @@ function DauTab({
         back after lunch is one reader and two sessions.
       </p>
       {compare ? (
-        <GroupedAxisChart
+        <LineChart
           labels={points.map((p) => p.label)}
           series={grouped}
+          format={m.format}
+          valueFormat={m.format ?? ((n) => n.toLocaleString())}
           onSelect={selector(view, points, levelOf(view.grain))}
         />
       ) : (
-        <AxisBarChart
+        <LineChart
           labels={points.map((p) => p.label)}
-          values={points.map((p) => p.value)}
-          name={m.label}
+          series={[
+            {
+              name: m.label,
+              tone: "stroke-accent",
+              values: points.map((p) => p.value),
+            },
+          ]}
           format={m.format}
+          valueFormat={m.format ?? ((n) => n.toLocaleString())}
           onSelect={selector(view, points, levelOf(view.grain))}
         />
       )}
@@ -1808,20 +1821,26 @@ function NotificationsSection({
       {!shown.length ? (
         <OutOfRange drill={view.drill} />
       ) : metric === "both" ? (
-        <GroupedAxisChart
+        <LineChart
           labels={sent.map((p) => p.label)}
           series={[
-            { name: "Sent", tone: "fill-accent", values: sent.map((p) => p.value) },
-            { name: "Opened", tone: "fill-mint", values: opened.map((p) => p.value) },
+            { name: "Sent", tone: "stroke-accent", values: sent.map((p) => p.value) },
+            { name: "Opened", tone: "stroke-mint", values: opened.map((p) => p.value) },
           ]}
           onSelect={selector(view, sent, level)}
         />
       ) : (
-        <AxisBarChart
+        <LineChart
           labels={points.map((p) => p.label)}
-          values={points.map((p) => p.value)}
-          name="Open rate (%)"
+          series={[
+            {
+              name: "Open rate (%)",
+              tone: "stroke-violet",
+              values: points.map((p) => p.value),
+            },
+          ]}
           format={(n) => `${Math.round(n * 100) / 100}`}
+          valueFormat={(n) => `${Math.round(n * 100) / 100}`}
           onSelect={selector(view, points, level)}
         />
       )}
@@ -1905,16 +1924,21 @@ function EngagementTab({
             count user messages sent to the news and buzz chats.
           </p>
           {compare ? (
-            <GroupedAxisChart
+            <LineChart
               labels={points.map((p) => p.label)}
               series={grouped}
               onSelect={selector(view, points, levelOf(view.grain))}
             />
           ) : (
-            <AxisBarChart
+            <LineChart
               labels={points.map((p) => p.label)}
-              values={points.map((p) => p.value)}
-              name={INTERACTION_LABEL[metric]}
+              series={[
+                {
+                  name: INTERACTION_LABEL[metric],
+                  tone: "stroke-accent",
+                  values: points.map((p) => p.value),
+                },
+              ]}
               onSelect={selector(view, points, levelOf(view.grain))}
             />
           )}
@@ -2373,13 +2397,13 @@ function TraxDetail({ view, section }: { view: ViewState; section: TimeSection |
         the signal, so completions sit beside plays rather than under them.
         Audio skews to the commutes more sharply than reading does.
       </p>
-      <GroupedAxisChart
+      <LineChart
         labels={plays.map((p) => p.label)}
         series={[
-          { name: "Plays", tone: "fill-accent", values: plays.map((p) => p.value) },
+          { name: "Plays", tone: "stroke-accent", values: plays.map((p) => p.value) },
           {
             name: "Completed",
-            tone: "fill-mint",
+            tone: "stroke-mint",
             values: completions.map((p) => p.value),
           },
         ]}

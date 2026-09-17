@@ -248,30 +248,30 @@ function monotonePath(pts: { x: number; y: number }[]): string {
 }
 
 /**
- * One series as a smooth line, with gridlines and a hover readout.
+ * One or more series as smooth lines, with gridlines and a hover readout.
  *
- * A line rather than bars because the question is the shape of the run — is it
- * climbing, is it flat, where did it turn — and a row of separate bars asks
- * the reader to join them up themselves. Bars are for comparing one column
- * against another; a line is for the trend between them.
+ * A line rather than bars because the question these charts are asked is the
+ * shape of the run — is it climbing, is it flat, where did it turn — and a row
+ * of separate bars asks the reader to join them up themselves. Bars are for
+ * comparing one column against another, which is a different question and
+ * still what the publishing chart wants.
+ *
+ * Several series share one axis so they can be read against each other. Every
+ * series must be the same length as `labels`; a gap is a zero, because a
+ * shorter array would silently slide a region's line along the axis.
  */
 export function LineChart({
   labels,
-  values,
-  name = "Value",
+  series,
   height = 300,
-  tone = "stroke-violet",
-  dot = "fill-violet",
   format = (n: number) => fmt(n),
   valueFormat = (n: number) => n.toLocaleString(),
+  onSelect,
 }: {
   labels: readonly string[];
-  values: number[];
-  /** Named in the tooltip: "Active users : 84". */
-  name?: string;
+  /** `tone` may be given as `fill-*` or `stroke-*`; both are understood. */
+  series: { name: string; tone: string; values: number[] }[];
   height?: number;
-  tone?: string;
-  dot?: string;
   /** The axis ticks, where "4k" is what a gridline wants to say. */
   format?: (n: number) => string;
   /**
@@ -282,11 +282,13 @@ export function LineChart({
    * and rounds away the difference the hover was asking about.
    */
   valueFormat?: (n: number) => string;
+  /** When given, a point becomes clickable and drills one level down. */
+  onSelect?: (index: number) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
 
   const STEPS = 4;
-  const top = niceMax(Math.max(...values, 0), STEPS);
+  const top = niceMax(Math.max(...series.flatMap((s) => s.values), 0), STEPS);
   const W = 1000;
   const H = height;
   const padL = 46;
@@ -295,27 +297,38 @@ export function LineChart({
   const padB = 32;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
-  const n = Math.max(values.length, 1);
+  const n = Math.max(labels.length, 1);
   /* Points sit on the edges rather than in the middle of a slot: a line's
      first and last readings are dates, not buckets, and the axis should start
      and end on them the way the labels do. */
   const stepX = n > 1 ? plotW / (n - 1) : 0;
 
-  const pts = values.map((v, i) => ({
-    x: padL + stepX * i,
-    y: padT + plotH - (top ? (v / top) * plotH : 0),
-  }));
-  const path = monotonePath(pts);
+  const xOf = (i: number) => padL + stepX * i;
+  const yOf = (v: number) => padT + plotH - (top ? (v / top) * plotH : 0);
+  const strokeOf = (tone: string) => tone.replace("fill-", "stroke-");
+  const swatchOf = (tone: string) => tone.replace("fill-", "bg-").replace("stroke-", "bg-");
+  const dotOf = (tone: string) => tone.replace("stroke-", "fill-");
 
   const every = Math.max(1, Math.ceil(labels.length / 8));
 
   return (
     <div className="relative" onMouseLeave={() => setHover(null)}>
+      {series.length > 1 && (
+        <div className="mb-3 flex flex-wrap gap-4">
+          {series.map((s) => (
+            <span key={s.name} className="flex items-center gap-1.5 text-[11px] font-bold">
+              <span className={`h-2.5 w-2.5 rounded-sm ${swatchOf(s.tone)}`} />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
+
       <svg
         viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height }}
         role="img"
-        aria-label={name}
+        aria-label={series.map((s) => s.name).join(", ")}
       >
         {Array.from({ length: STEPS + 1 }, (_, i) => {
           const y = padT + plotH - (plotH * i) / STEPS;
@@ -342,39 +355,53 @@ export function LineChart({
           );
         })}
 
-        <path
-          d={path}
-          fill="none"
-          className={tone}
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {series.map((s) => (
+          <path
+            key={s.name}
+            d={monotonePath(s.values.map((v, i) => ({ x: xOf(i), y: yOf(v) })))}
+            fill="none"
+            className={strokeOf(s.tone)}
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={hover === null ? 1 : 0.92}
+          />
+        ))}
 
         {hover !== null && (
           <g>
             <line
-              x1={pts[hover].x}
-              x2={pts[hover].x}
+              x1={xOf(hover)}
+              x2={xOf(hover)}
               y1={padT}
               y2={padT + plotH}
               className="stroke-line"
             />
-            <circle cx={pts[hover].x} cy={pts[hover].y} r={4.5} className={dot} />
+            {series.map((s) => (
+              <circle
+                key={s.name}
+                cx={xOf(hover)}
+                cy={yOf(s.values[hover] ?? 0)}
+                r={4.5}
+                className={dotOf(s.tone)}
+              />
+            ))}
           </g>
         )}
 
         {/* A column per reading, so the whole height of the chart is a target
             and the pointer does not have to find a 2px line. */}
-        {values.map((_, i) => (
+        {labels.map((_, i) => (
           <rect
             key={i}
-            x={padL + stepX * i - stepX / 2}
+            x={xOf(i) - (stepX || plotW) / 2}
             y={padT}
             width={stepX || plotW}
             height={plotH}
             fill="transparent"
             onMouseEnter={() => setHover(i)}
+            onClick={onSelect ? () => onSelect(i) : undefined}
+            style={onSelect ? { cursor: "pointer" } : undefined}
           />
         ))}
 
@@ -382,7 +409,7 @@ export function LineChart({
           i % every === 0 ? (
             <text
               key={label + i}
-              x={pts[i].x}
+              x={xOf(i)}
               /* Pinned inside the box at both ends, or the first and last
                  labels hang off the sides of the card. */
               textAnchor={i === 0 ? "start" : i === labels.length - 1 ? "end" : "middle"}
@@ -400,18 +427,28 @@ export function LineChart({
         <div
           className="pointer-events-none absolute rounded-xl border border-line bg-card px-3.5 py-2.5 text-[12px] shadow-(--shadow-pop)"
           style={{
-            left: `${(pts[hover].x / W) * 100}%`,
-            top: `${((pts[hover].y + 18) / H) * 100}%`,
+            left: `${(xOf(hover) / W) * 100}%`,
+            /* Anchored under the highest line at this reading, so the card
+               never lands on top of a series it is describing. */
+            top: `${((Math.min(...series.map((s) => yOf(s.values[hover] ?? 0))) + 18) / H) * 100}%`,
             /* Flips to the other side near the right edge so the card is
                never half off the panel. */
             transform:
-              hover > values.length - 3 ? "translateX(-100%)" : "translateX(-8px)",
+              hover > labels.length - 3 ? "translateX(-100%)" : "translateX(-8px)",
           }}
         >
           <div className="font-semibold text-muted">{labels[hover]}</div>
-          <div className="mt-1 font-bold">
-            {name} : <span className="tabular-nums">{valueFormat(values[hover])}</span>
-          </div>
+          {series.map((s) => (
+            <div key={s.name} className="mt-1 flex items-center gap-2 font-bold">
+              {series.length > 1 && (
+                <span className={`h-2 w-2 shrink-0 rounded-sm ${swatchOf(s.tone)}`} />
+              )}
+              <span>
+                {s.name} :{" "}
+                <span className="tabular-nums">{valueFormat(s.values[hover] ?? 0)}</span>
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
