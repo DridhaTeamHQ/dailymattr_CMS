@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "portal"],
       "port": 3000
+    },
+    {
+      "name": "portal-3001",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "portal", "--", "-p", "3001"],
+      "port": 3001,
+      "autoPort": false
     }
   ]
 }

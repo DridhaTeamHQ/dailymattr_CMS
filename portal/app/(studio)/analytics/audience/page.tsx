@@ -37,7 +37,6 @@ import { SectionHeader } from "@/components/ui";
 import { fmt } from "@/components/StatsStrip";
 import { can, useAuth } from "@/lib/auth";
 import {
-  BY_CITY,
   BY_STATE,
   CATEGORIES,
   CATEGORY_ENGAGEMENT,
@@ -771,15 +770,9 @@ export default function AudiencePage() {
 
       {/* Permission used to sit in this row. It moved down to the notification
           section, where the question it answers is being asked. */}
-      <div className="mb-6 grid gap-5 lg:grid-cols-3">
+      <div className="mb-6 grid gap-5 lg:grid-cols-2">
         <Panel title="By state" note="Where readers open the app.">
           <BarList rows={BY_STATE.map((r) => ({ name: r.name, value: r.users }))} />
-        </Panel>
-        <Panel title="By city">
-          <BarList
-            rows={BY_CITY.map((r) => ({ name: r.name, value: r.users }))}
-            tone="bg-violet"
-          />
         </Panel>
         {/* Moved out of the heatmap's row when that went full width. */}
         <Panel
