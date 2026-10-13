@@ -105,7 +105,7 @@ function daysAgo(n: number): string {
 }
 
 /** Monday of the week containing `iso`, for the weekly publishing view. */
-function weekOf(iso: string): string {
+export function weekOf(iso: string): string {
   const d = new Date(iso + "T00:00:00Z");
   const day = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - day);
@@ -536,16 +536,14 @@ export type ContentType =
   | "pix"
   | "qix"
   | "trax"
-  | "buzz"
   | "poll"
   | "xplaind";
 
 export const CONTENT_TYPES: ContentType[] = [
-  "article",
   "pix",
+  "article",
   "qix",
   "trax",
-  "buzz",
   "poll",
   "xplaind",
 ];
@@ -555,7 +553,6 @@ export const CONTENT_TYPE_LABEL: Record<ContentType, string> = {
   pix: "Pix",
   qix: "Qix",
   trax: "Trax",
-  buzz: "Buzz",
   poll: "Polls",
   xplaind: "Xplaind",
 };
@@ -578,9 +575,40 @@ export const CATEGORIES = [
 export interface PublishingRow {
   day: string;
   week: string;
+  /** The reading window the items went out in. */
+  section: TimeSection;
   contentType: ContentType;
   category: string;
   count: number;
+}
+
+/**
+ * When the desk files, which is not when readers read: a working day with a
+ * morning push for the commute and a thin overnight shift. Shaped so the
+ * Time section filter on the Publishing tab narrows to something plausible.
+ */
+const FILING_WEIGHT: Record<TimeSection, number> = {
+  "12am–3am": 0.02,
+  "3am–6am": 0.04,
+  "6am–9am": 0.2,
+  "9am–12pm": 0.22,
+  "12pm–3pm": 0.18,
+  "3pm–6pm": 0.16,
+  "6pm–9pm": 0.12,
+  "9pm–12am": 0.06,
+};
+
+/**
+ * Which window a row went out in. Hashed rather than drawn from `rnd`, so
+ * adding it left every other generated figure on the page where it was.
+ */
+function filedIn(day: string, contentType: ContentType, category: string): TimeSection {
+  let x = hash01("filed-at", day, contentType, category);
+  for (const s of TIME_SECTIONS) {
+    x -= FILING_WEIGHT[s];
+    if (x < 0) return s;
+  }
+  return TIME_SECTIONS[TIME_SECTIONS.length - 1];
 }
 
 /**
@@ -588,34 +616,59 @@ export interface PublishingRow {
  * purpose: most day × type × category cells are empty, as they are in life,
  * and the chart is a dense field of small bars rather than a smooth curve.
  */
-export const PUBLISHING_ROWS: PublishingRow[] = Array.from({ length: 90 }, (_, k) => k).flatMap((k) => {
-  const day = daysAgo(90 - k);
-  const quiet = isWeekend(day) ? 0.55 : 1;
-  // Output ramps up over the quarter as the desk grew.
-  const ramp = 0.6 + (k / 90) * 0.7;
-  const rows: PublishingRow[] = [];
-  const slots = Math.round(between(4, 9) * quiet * ramp);
-  for (let i = 0; i < slots; i++) {
-    /* Weighted by hand rather than picked uniformly: a newsroom files buzz and
-       articles all day and a poll once a week, and a flat draw would show
-       seven equal bars, which is the one shape this chart must not invent. */
-    const DRAW: ContentType[] = [
-      "buzz", "buzz", "buzz", "buzz",
-      "article", "article", "article",
-      "pix", "pix", "pix",
-      "qix", "qix",
-      "trax",
-      "poll",
-      "xplaind",
-    ];
-    const contentType = DRAW[between(0, DRAW.length - 1)];
-    const category = CATEGORIES[between(0, CATEGORIES.length - 1)];
-    const existing = rows.find((r) => r.contentType === contentType && r.category === category);
-    if (existing) existing.count += between(1, 3);
-    else rows.push({ day, week: weekOf(day), contentType, category, count: between(1, 4) });
-  }
-  return rows;
-});
+export const PUBLISHING_ROWS: PublishingRow[] = (() => {
+  /* A second pass with its own seed, so a single day is worth looking at once
+     View can narrow the tab to one. The first pass draws from the shared
+     stream exactly as it always has — every generator below this one reads on
+     from where it stops, so changing what it consumes would quietly reshuffle
+     Trax, notifications and the desk table as well. */
+  const extra = mulberry32(20261013);
+  const extraBetween = (lo: number, hi: number) => lo + Math.floor(extra() * (hi - lo + 1));
+
+  /* Weighted by hand rather than picked uniformly: a newsroom files pix and
+     articles all day and a poll once a week, and a flat draw would show
+     six equal bars, which is the one shape this chart must not invent. */
+  const DRAW: ContentType[] = [
+    "pix", "pix", "pix", "pix",
+    "article", "article", "article",
+    "qix", "qix",
+    "trax",
+    "poll",
+    "xplaind",
+  ];
+
+  return Array.from({ length: 90 }, (_, k) => k).flatMap((k) => {
+    const day = daysAgo(90 - k);
+    const quiet = isWeekend(day) ? 0.55 : 1;
+    // Output ramps up over the quarter as the desk grew.
+    const ramp = 0.6 + (k / 90) * 0.7;
+    const rows: PublishingRow[] = [];
+
+    const file = (slots: number, pick: (lo: number, hi: number) => number) => {
+      for (let i = 0; i < slots; i++) {
+        const contentType = DRAW[pick(0, DRAW.length - 1)];
+        const category = CATEGORIES[pick(0, CATEGORIES.length - 1)];
+        const existing = rows.find(
+          (r) => r.contentType === contentType && r.category === category
+        );
+        if (existing) existing.count += pick(1, 3);
+        else
+          rows.push({
+            day,
+            week: weekOf(day),
+            section: filedIn(day, contentType, category),
+            contentType,
+            category,
+            count: pick(1, 4),
+          });
+      }
+    };
+
+    file(Math.round(between(4, 9) * quiet * ramp), between);
+    file(Math.round(extraBetween(8, 16) * quiet * ramp), extraBetween);
+    return rows;
+  });
+})();
 
 /* ────────────────────────────── trax ──────────────────────────────── */
 

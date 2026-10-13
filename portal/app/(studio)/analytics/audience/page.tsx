@@ -1,20 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle,
   ArrowLeft,
   Activity,
-  BarChart3,
   BellRing,
-  Check,
   ChevronRight,
   Clock,
   Gauge,
   Headphones,
   Layers,
-  Minus,
   RefreshCw,
   Send,
   Users,
@@ -47,7 +43,6 @@ import {
   CATEGORY_ENGAGEMENT,
   CONTENT_TYPES,
   CONTENT_TYPE_LABEL,
-  COVERAGE,
   EDITOR_ROWS,
   EDITORIAL,
   HEATMAP_DAYS,
@@ -89,6 +84,7 @@ import {
   REGION_CITIES,
   notificationSectionRowsFor,
   monthDay,
+  weekOf,
   regionsForScope,
   regionByKey,
   dauRowsForRegion,
@@ -112,14 +108,6 @@ import {
  */
 
 type Tab = "dau" | "engagement" | "publishing";
-
-/** How far back the trend line looks. */
-type TrendRange = "week" | "month";
-
-const TREND_RANGES: { key: TrendRange; label: string }[] = [
-  { key: "week", label: "Week" },
-  { key: "month", label: "Month" },
-];
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dau", label: "DAU & time spent" },
@@ -156,6 +144,13 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
   { key: "daily", label: "Daily" },
   { key: "weekly", label: "Weekly" },
 ];
+
+/**
+ * The first of the last seven full days. "Weekly" means this run of days
+ * everywhere on the page: a point per day on the time charts, and the days
+ * counted on Publishing.
+ */
+const LAST_7_FROM = DAYS[DAYS.length - 7].date;
 
 /** Where each option starts. Daily opens straight into the latest day. */
 const GRAIN_DRILL: Record<Granularity, Drill> = {
@@ -256,20 +251,11 @@ function bucket<T extends TimeRow>(
     return collapse(byDay, dayHow).map((p) => ({ ...p, label: p.key.slice(5) }));
   }
 
-  // Roll the daily figures up, so the week is built from whole days.
-  const dayValue = new Map(collapse(byDay, dayHow).map((p) => [p.key, p.value]));
-  const weekOfDay = new Map(rows.map((r) => [r.day, r.week]));
-  const byWeek = new Map<string, number[]>();
-  for (const [day, v] of dayValue) {
-    const w = weekOfDay.get(day)!;
-    const list = byWeek.get(w) ?? [];
-    list.push(v);
-    byWeek.set(w, list);
-  }
-  return collapse(byWeek, weekHow).map((p) => ({
-    ...p,
-    label: `w/c ${p.key.slice(5)}`,
-  }));
+  /* Weekly is the last seven days, a point per day and dated "Oct 6" — two or
+     three week averages barely move, and nobody reads "w/c 09-28" as quickly. */
+  return collapse(byDay, dayHow)
+    .filter((p) => p.key >= LAST_7_FROM)
+    .map((p) => ({ ...p, label: monthDay(p.key) }));
 }
 
 /* ───────────────────────── drilling into a bar ─────────────────────────
@@ -310,9 +296,10 @@ interface ViewState {
   open: (level: Level, key: string) => void;
 }
 
-/** A chart at the finest resolution has nothing left to open. */
+/** A chart at the finest resolution has nothing left to open. Weekly draws
+ *  days, so a point on it opens a day, as one inside an opened week does. */
 const levelOf = (g: Granularity): Level | null =>
-  g === "sections" || g === "overall" ? null : g;
+  g === "sections" || g === "overall" ? null : "daily";
 
 /** Wires a bar click back to the day or week that produced the bar. */
 const selector = (view: ViewState, points: Point[], level: Level | null) =>
@@ -328,7 +315,7 @@ function grainNote(view: ViewState) {
     return "One bar per reading window, for every day in range.";
   if (view.grain === "daily")
     return "One bar per day, summed across the reading windows.";
-  return "One bar per week. Counted events are totalled; per-user figures and rates are averaged over the days in the week, because summing readers across days counts the same person more than once.";
+  return "One point per day for the last 7 days, summed across the reading windows.";
 }
 
 const mmss = (sec: number) => {
@@ -363,8 +350,12 @@ function useTimeView() {
     () => ({
       grain: drilledGrain(grain, drill),
       drill,
+      /* A day opened straight off the weekly line has no week open yet; it
+         gets its own, so the breadcrumb has a level to climb back out to. */
       open: (level, key) =>
-        setDrill((d) => (level === "weekly" ? { week: key } : { week: d.week, day: key })),
+        setDrill((d) =>
+          level === "weekly" ? { week: key } : { week: d.week ?? weekOf(key), day: key }
+        ),
     }),
     [grain, drill]
   );
@@ -389,14 +380,6 @@ function useTimeView() {
 export default function AudiencePage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("dau");
-  /* Its own control, not the tabbed card's: this panel sits above that card
-     and answers a different question, and a toggle that silently moved a chart
-     further down the page would be the sort of thing nobody notices. */
-  const [trendRange, setTrendRange] = useState<TrendRange>("week");
-  const trend = useMemo(
-    () => DAYS.slice(trendRange === "week" ? -7 : -30),
-    [trendRange]
-  );
   /** The tabbed card's own resolution, window filter and opened bar. */
   const main = useTimeView();
   /** Notifications carry theirs, so the two sections cannot move each other. */
@@ -410,13 +393,14 @@ export default function AudiencePage() {
      categories, and "all products" sums seven shapes into one that is none of
      them. Pix is the one the desk files most deliberately by topic. */
   const [contentType, setContentType] = useState<ContentType | "all">("pix");
+  const [publishingMetric, setPublishingMetric] = useState<PublishingMetric>("items");
   /** Bumping this re-mounts the section, which is what "Refresh" means here. */
   const [nonce, setNonce] = useState(0);
 
   /* One region filter for the whole section. Empty is everywhere; one filters;
      two or more compare. Held here rather than per tab so switching tabs keeps
-     the question you were asking. */
-  const [regionScope, setRegionScope] = useState<RegionScope>("state");
+     the question you were asking. States only — the States/Cities toggle was
+     taken off the card. */
   const [regionKeys, setRegionKeys] = useState<string[]>([]);
 
   const section = main.section;
@@ -467,18 +451,6 @@ export default function AudiencePage() {
         </Link>
       </SectionHeader>
 
-      {/* Said once, at the top, where nobody scrolls past it. A dashboard of
-          invented numbers that looks measured is the thing to avoid. */}
-      <div className="card mb-5 flex items-start gap-3 border-l-4 !border-l-amber p-4">
-        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber" />
-        <p className="text-sm leading-relaxed">
-          <span className="font-bold text-amber">Sample data. </span>
-          Nothing on this page is measured. Most of these events are not sent by
-          the app yet — this is the reporting laid out for sign-off before the
-          tracking is built. What is real is listed at the bottom.
-        </p>
-      </div>
-
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="card mb-5 overflow-hidden p-0">
         <div className="grid gap-6 p-6 lg:grid-cols-[1fr_360px]">
@@ -508,7 +480,7 @@ export default function AudiencePage() {
               <Chip>Audio scope: Overall</Chip>
               <Chip>
                 Active filters:{" "}
-                {(section === "all" || tab === "publishing" ? 0 : 1) +
+                {(section === "all" ? 0 : 1) +
                   (push.section === "all" ? 0 : 1)}
               </Chip>
             </div>
@@ -593,44 +565,12 @@ export default function AudiencePage() {
         />
       </div>
 
-      {/* ── The run of days ───────────────────────────────────────────
-          Above the tabbed card on purpose: "is it going up" is the first
-          question anyone asks of this page, and it wants a line rather than a
-          tab, a window filter and a region picker in front of it. */}
-      <div className="mb-6">
-        <Panel
-          title="Daily Active Users Trend"
-          icon={BarChart3}
-          right={
-            <Segmented
-              options={TREND_RANGES}
-              value={trendRange}
-              onChange={setTrendRange}
-            />
-          }
-          note={`Active devices per day, ${
-            trendRange === "week" ? "the last 7 days" : "the last 30 days"
-          }. Everywhere, every window — the filters below belong to the card below.`}
-        >
-          <LineChart
-            labels={trend.map((d) => monthDay(d.date))}
-            series={[
-              {
-                name: "Active users",
-                tone: "stroke-violet",
-                values: trend.map((d) => d.dau),
-              },
-            ]}
-          />
-        </Panel>
-      </div>
-
       {/* ── Tabbed day × window analytics ─────────────────────────────── */}
       <div className="card mb-6 p-5" key={nonce}>
         <h2 className="text-sm font-bold">Daily and time-section analytics</h2>
         <p className="mt-1 mb-4 text-[12px] text-faint">
           {tab === "publishing"
-            ? "Shows overall publishing history."
+            ? "Shows publishing history for the period chosen below."
             : "Uses the performance window below; defaults to the last " +
               WINDOW_DAYS +
               " days."}{" "}
@@ -641,48 +581,49 @@ export default function AudiencePage() {
         <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
         <div className="mt-4 mb-3 flex flex-wrap items-center gap-3">
-          {/* One resolution control for the two tabs that have a time axis.
-              Notifications have their own, down in their own section.
+          {/* One resolution control for every tab in this card. Notifications
+              have their own, down in their own section.
 
-              Publishing no longer draws one: its chart is categories across
-              the bottom for a single product, so a control that chose between
-              days and weeks would be choosing the shape of an axis that is
-              not there. */}
-          {tab !== "publishing" && (
-            <Segmented
-              label="View"
-              options={GRANULARITIES}
-              value={main.grain}
-              onChange={main.chooseGrain}
-            />
-          )}
+              On Publishing the axis is categories, not time, so View picks the
+              period being counted instead — the whole history, the latest day
+              or the last seven — and the axis stays put. */}
+          <Segmented
+            label="View"
+            options={GRANULARITIES}
+            value={main.grain}
+            onChange={main.chooseGrain}
+          />
 
-          {/* Publishing has no reading windows to filter by — an item is filed
-              on a day, not at an hour — so the control is not offered there
-              rather than offered and then ignored. The chosen window is kept,
-              not cleared: coming back to the reading tabs should find the page
-              where it was left. */}
-          {tab !== "publishing" && (
+          {/* Publishing reads it as the window an item went out in; the
+              reading tabs as the window it was read in. */}
+          <Select
+            label="Time section"
+            value={section}
+            onChange={main.setSection}
+            options={[
+              { key: "all" as const, label: "All sections" },
+              ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
+            ]}
+          />
+
+          {tab === "publishing" && (
             <Select
-              label="Time section"
-              value={section}
-              onChange={main.setSection}
+              label="Feature"
+              value={contentType}
+              onChange={setContentType}
               options={[
-                { key: "all" as const, label: "All sections" },
-                ...TIME_SECTIONS.map((s) => ({ key: s, label: s })),
+                { key: "all" as const, label: "All features" },
+                ...CONTENT_TYPES.map((t) => ({ key: t, label: CONTENT_TYPE_LABEL[t] })),
               ]}
             />
           )}
 
           {tab === "publishing" && (
             <Select
-              label="Product"
-              value={contentType}
-              onChange={setContentType}
-              options={[
-                { key: "all" as const, label: "All products" },
-                ...CONTENT_TYPES.map((t) => ({ key: t, label: CONTENT_TYPE_LABEL[t] })),
-              ]}
+              label="Metric"
+              value={publishingMetric}
+              onChange={setPublishingMetric}
+              options={PUBLISHING_METRICS}
             />
           )}
 
@@ -722,8 +663,7 @@ export default function AudiencePage() {
         </div>
 
         <RegionFilter
-          scope={regionScope}
-          onScope={setRegionScope}
+          scope="state"
           keys={regionKeys}
           onKeys={setRegionKeys}
         />
@@ -764,7 +704,11 @@ export default function AudiencePage() {
         {tab === "publishing" && (
           <PublishingTab
             contentType={contentType}
+            onContentTypeChange={setContentType}
             series={regionSeries}
+            grain={main.grain}
+            section={section}
+            metric={publishingMetric}
           />
         )}
       </div>
@@ -831,7 +775,7 @@ export default function AudiencePage() {
         <Panel title="By state" note="Where readers open the app.">
           <BarList rows={BY_STATE.map((r) => ({ name: r.name, value: r.users }))} />
         </Panel>
-        <Panel title="By city" note="Inferred, so treat the tail as noisy.">
+        <Panel title="By city">
           <BarList
             rows={BY_CITY.map((r) => ({ name: r.name, value: r.users }))}
             tone="bg-violet"
@@ -925,10 +869,6 @@ export default function AudiencePage() {
               { name: "Off", value: PUSH_SUMMARY.denied, tone: "bg-rose" },
             ]}
           />
-          <p className="mt-4 text-[11px] leading-snug text-faint">
-            Opt-in rate unavailable: notification permission is not recorded, and
-            holding an FCM token is not consent.
-          </p>
         </Panel>
       </div>
 
@@ -1031,11 +971,6 @@ export default function AudiencePage() {
               },
             ]}
           />
-          <p className="mt-3 text-[12px] text-rose">
-            Unavailable: the app never reports that a push was opened, so every
-            open on this section is modelled. FCM accepted is the one column
-            that could be real today.
-          </p>
         </Panel>
       </div>
 
@@ -1144,32 +1079,6 @@ export default function AudiencePage() {
               },
             ]}
           />
-        </Panel>
-      </div>
-
-      {/* ── Coverage ──────────────────────────────────────────────────── */}
-      <div className="mb-10">
-        <Panel
-          title="What is real, and what is not"
-          note="Green means the event already exists in the database and only the query is missing. Grey means the app has to start sending something before the panel can be anything but a mock."
-        >
-          <div className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
-            {COVERAGE.map((c) => (
-              <div key={c.panel} className="flex items-start gap-2.5 py-1">
-                <span
-                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
-                    c.measurable ? "bg-mint text-white" : "bg-canvas text-faint"
-                  }`}
-                >
-                  {c.measurable ? <Check size={10} strokeWidth={3} /> : <Minus size={10} />}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-[12px] font-bold">{c.panel}</div>
-                  <div className="text-[11px] leading-snug text-faint">{c.note}</div>
-                </div>
-              </div>
-            ))}
-          </div>
         </Panel>
       </div>
     </>
@@ -1356,12 +1265,10 @@ function seriesFor(keys: string[]): RegionSeries[] {
 /** The picker, and the sentence saying what it is doing. */
 function RegionFilter({
   scope,
-  onScope,
   keys,
   onKeys,
 }: {
   scope: RegionScope;
-  onScope: (s: RegionScope) => void;
   keys: string[];
   onKeys: (k: string[]) => void;
 }) {
@@ -1372,22 +1279,6 @@ function RegionFilter({
   return (
     <div className="mt-4 rounded-2xl border border-line p-3">
       <div className="flex flex-wrap items-center gap-3">
-        <Segmented
-          label="Region"
-          options={[
-            { key: "state" as const, label: "States" },
-            { key: "city" as const, label: "Cities" },
-          ]}
-          value={scope}
-          /* Selections are dropped on a scope change rather than carried:
-             comparing Kerala with Bengaluru is a chart with no shared
-             denominator, and quietly keeping half a selection is worse than
-             asking for it again. */
-          onChange={(s) => {
-            onScope(s);
-            onKeys([]);
-          }}
-        />
         {/* Thirty-six cities laid out as pills was three wrapped rows of chrome
             above every chart on the tab. The same choice folds into a menu,
             and the sentence beside it still says what the charts are doing. */}
@@ -1549,8 +1440,9 @@ function foldDays<T extends { day: string }>(
   const byDay = new Map<string, T[]>();
   for (const r of rows) byDay.set(r.day, [...(byDay.get(r.day) ?? []), r]);
 
+  // Latest day first: the question is nearly always "how did yesterday go".
   return [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => b.localeCompare(a))
     .map(([, group]) => {
       const out = { ...group[0] } as T;
       for (const k of sum) {
@@ -1585,6 +1477,7 @@ function DauTab({
   const shown = scope(rows, view.drill);
   const m = DAU_METRICS[metric];
   const points = bucket(shown, view.grain, m.value, m.agg);
+  const onSelect = selector(view, points, levelOf(view.grain));
 
   /* Each region bucketed the same way as the chart above, so the bars line up
      against one axis and one set of labels. */
@@ -1617,7 +1510,7 @@ function DauTab({
           series={grouped}
           format={m.format}
           valueFormat={m.format ?? ((n) => n.toLocaleString())}
-          onSelect={selector(view, points, levelOf(view.grain))}
+          onSelect={onSelect}
         />
       ) : (
         <LineChart
@@ -1631,7 +1524,7 @@ function DauTab({
           ]}
           format={m.format}
           valueFormat={m.format ?? ((n) => n.toLocaleString())}
-          onSelect={selector(view, points, levelOf(view.grain))}
+          onSelect={onSelect}
         />
       )}
       {m.note && <p className="mt-2 text-[11px] text-faint">{m.note}</p>}
@@ -1698,10 +1591,6 @@ function DauTab({
         />
       </div>
       )}
-      <p className="mt-3 text-[12px] text-rose">
-        Unavailable: right-swipe direction is not recorded — the figures in that
-        column are modelled, not counted.
-      </p>
     </>
   );
 }
@@ -1988,10 +1877,6 @@ function EngagementTab({
             />
           </div>
           )}
-          <p className="mt-3 text-[12px] text-rose">
-            Unavailable: no event fires on the sources or ask buttons — the AI
-            columns are modelled.
-          </p>
         </>
       ) : (
         <OutOfRange drill={view.drill} />
@@ -2140,6 +2025,45 @@ function EngagementTab({
 }
 
 /**
+ * What a Publishing bar reports.
+ *
+ * Share is there for comparing: Pix files several times what Polls does, and
+ * two regions differ just as much, so raw counts mostly say which is bigger.
+ * As a share of its own output, each one's mix can be read against another's.
+ */
+type PublishingMetric = "items" | "share";
+
+const PUBLISHING_METRICS: { key: PublishingMetric; label: string }[] = [
+  { key: "items", label: "Items published" },
+  { key: "share", label: "Share of output (%)" },
+];
+
+/**
+ * The period View picks on Publishing. The axis is categories, so the control
+ * cannot regroup it by day or week the way it does a time chart; it chooses
+ * which days are counted instead. A rolling seven days rather than the latest
+ * calendar week, which on a Monday would be a single day.
+ */
+function inPeriod(day: string, grain: Granularity): boolean {
+  if (grain === "overall") return true;
+  if (grain === "weekly") return day >= LAST_7_FROM;
+  return day === LATEST_DAY;
+}
+
+function periodText(grain: Granularity): string {
+  if (grain === "overall") return "across the whole history";
+  if (grain === "weekly")
+    return `over the last 7 days (${monthDay(LAST_7_FROM)} – ${monthDay(LATEST_DAY)})`;
+  return `on ${monthDay(LATEST_DAY)}, the latest full day`;
+}
+
+/** Each category as a percentage of the total, to one decimal place. */
+function asShare(values: number[]): number[] {
+  const total = values.reduce((a, b) => a + b, 0);
+  return values.map((v) => (total ? Math.round((v / total) * 1000) / 10 : 0));
+}
+
+/**
  * What the desk published, by category, one product at a time.
  *
  * This drew a time axis — a bar per day or week, every product stacked into
@@ -2149,25 +2073,42 @@ function EngagementTab({
  * answers it directly, and switching the product redraws the same axis so two
  * products can be compared by eye rather than by memory.
  *
- * It counts the whole range. There is no time axis left to open, so there is
- * nothing to drill into and no week or day to be scoped to.
+ * View, Time section and Metric narrow what is counted — which days, which
+ * filing window, and whether as items or as a share — and leave the axis
+ * alone. There is still nothing to drill into.
  */
 function PublishingTab({
   contentType,
+  onContentTypeChange,
   series,
+  grain,
+  section,
+  metric,
 }: {
   contentType: ContentType | "all";
+  onContentTypeChange: (t: ContentType | "all") => void;
   series: RegionSeries[];
+  grain: Granularity;
+  section: TimeSection | "all";
+  metric: PublishingMetric;
 }) {
   /* One region narrows the library to what was filed for it; several leave
      this on everything, because the comparison is drawn per region below. */
   const primaryRegion = series.length === 1 ? series[0].key : null;
-  const scoped = useMemo(() => {
-    const base = publishingRowsForRegion(primaryRegion);
-    return contentType === "all"
-      ? base
-      : base.filter((r) => r.contentType === contentType);
-  }, [contentType, primaryRegion]);
+
+  /** Product, period and filing window — every count on the tab goes through it. */
+  const keep = useCallback(
+    (r: PublishingRow) =>
+      (contentType === "all" || r.contentType === contentType) &&
+      (section === "all" || r.section === section) &&
+      inPeriod(r.day, grain),
+    [contentType, section, grain]
+  );
+
+  const scoped = useMemo(
+    () => publishingRowsForRegion(primaryRegion).filter(keep),
+    [primaryRegion, keep]
+  );
 
   const compare = series.length > 1;
 
@@ -2185,13 +2126,17 @@ function PublishingTab({
 
   /** The same reduction as `points`, run once per region. */
   const countsFor = (key: string | null): Map<string, number> => {
-    const base = publishingRowsForRegion(key);
-    const filtered =
-      contentType === "all" ? base : base.filter((r) => r.contentType === contentType);
     const acc = new Map<string, number>();
-    for (const r of filtered) acc.set(r.category, (acc.get(r.category) ?? 0) + r.count);
+    for (const r of publishingRowsForRegion(key).filter(keep))
+      acc.set(r.category, (acc.get(r.category) ?? 0) + r.count);
     return acc;
   };
+
+  const share = metric === "share";
+  /** What a bar shows: the count, or the count as a share of its own series. */
+  const shown = (values: number[]) => (share ? asShare(values) : values);
+  const format = share ? (n: number) => `${n}%` : undefined;
+  const metricName = share ? "Share of output (%)" : "Published";
 
   /* Every category, in one fixed order, whether or not this product has
      anything in it. A product that has never been filed under Sports should
@@ -2208,29 +2153,19 @@ function PublishingTab({
     }));
   }, [scoped]);
 
-  /* Clicking a bar in "By product" asks what that product is made of, which
-     is the question the panel beside it already answers for everything. So it
-     narrows that panel and nothing else — the chart above and the table below
-     stay where they are, because the click was about the split, not a filter
-     on the tab. Clicking it again puts it back. */
-  const [picked, setPicked] = useState<ContentType | null>(null);
-
-  /* The Content type dropdown has already narrowed the tab to one product, so
-     picking a second one here could only ever produce an empty panel. The
-     dropdown wins and the rows stop being clickable — the pick is remembered,
-     not thrown away, and comes back when the dropdown goes to All types. */
-  const focusType = contentType === "all" ? picked : null;
+  /* Clicking a bar in "By product" is the Feature dropdown by another route:
+     it switches the whole tab to that product, so the dropdown, the chart and
+     the category split beside it all agree. Clicking it again goes back to
+     All features. */
+  const focusType = contentType === "all" ? null : contentType;
 
   const byCategory = useMemo(() => {
     const acc: Record<string, number> = {};
-    for (const r of scoped) {
-      if (focusType && r.contentType !== focusType) continue;
-      acc[r.category] = (acc[r.category] ?? 0) + r.count;
-    }
+    for (const r of scoped) acc[r.category] = (acc[r.category] ?? 0) + r.count;
     return CATEGORIES.map((name) => ({ name, value: acc[name] ?? 0 })).sort(
       (a, b) => b.value - a.value
     );
-  }, [scoped, focusType]);
+  }, [scoped]);
 
   const byType = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -2252,14 +2187,24 @@ function PublishingTab({
   return (
     <>
       <p className="mb-3 text-[12px] text-faint">
-        {contentType === "all"
-          ? "Every product, by category, across the whole range."
-          : `${CONTENT_TYPE_LABEL[contentType]} by category, across the whole range.`}{" "}
-        Counts every item that reached readers. Switch product above to redraw
-        the same axis.
+        {contentType === "all" ? "Every product" : CONTENT_TYPE_LABEL[contentType]} by
+        category, {periodText(grain)}
+        {section !== "all" && `, filed ${section}`}.{" "}
+        {share
+          ? "Each bar is that category's share of the output counted here."
+          : "Counts every item that reached readers."}{" "}
+        Switch feature above to redraw the same axis.
       </p>
       {cityNote && (
         <p className="mb-3 text-[12px] text-amber">{cityNote}</p>
+      )}
+      {/* A day of one product in one window is often nothing at all. An axis
+          of flat zeros reads as a broken chart, so say what it means. */}
+      {!compare && points.every((p) => p.value === 0) && (
+        <p className="mb-3 text-[12px] text-amber">
+          Nothing was filed for this selection — widen the View or the time
+          section to see more.
+        </p>
       )}
       {compare ? (
         <GroupedAxisChart
@@ -2272,21 +2217,23 @@ function PublishingTab({
             return {
               name: sr.name,
               tone: sr.tone,
-              values: points.map((p) => acc.get(p.key) ?? 0),
+              values: shown(points.map((p) => acc.get(p.key) ?? 0)),
             };
           })}
           height={320}
           valueLabels
           angledLabels
+          format={format}
         />
       ) : (
         <AxisBarChart
           labels={points.map((p) => p.label)}
-          values={points.map((p) => p.value)}
-          name="Published"
+          values={shown(points.map((p) => p.value))}
+          name={metricName}
           height={320}
           valueLabels
           angledLabels
+          format={format}
         />
       )}
       {compare && (
@@ -2308,18 +2255,15 @@ function PublishingTab({
           <h3 className="mb-3 text-[12px] font-bold text-faint">By product</h3>
           <BarList
             rows={byType}
-            onSelect={
-              contentType === "all"
-                ? (k) => setPicked((f) => (f === k ? null : (k as ContentType)))
-                : undefined
+            onSelect={(k) =>
+              onContentTypeChange(k === contentType ? "all" : (k as ContentType))
             }
             selected={focusType}
           />
           <p className="mt-2 text-[11px] text-faint">
             Always the whole library, so the split stays readable while the
-            filter narrows everything else on the tab.
-            {contentType === "all" &&
-              " Click a product to see what it is made of, beside."}
+            filter narrows everything else on the tab. Click a product to
+            switch the feature to it.
           </p>
         </div>
         <div>
@@ -2331,7 +2275,7 @@ function PublishingTab({
             {focusType && (
               <button
                 type="button"
-                onClick={() => setPicked(null)}
+                onClick={() => onContentTypeChange("all")}
                 className="cursor-pointer rounded-full bg-tint px-2 py-0.5 text-[11px] font-bold text-accent"
               >
                 {CONTENT_TYPE_LABEL[focusType]} ×
@@ -2354,6 +2298,7 @@ function PublishingTab({
               render: (r) => CONTENT_TYPE_LABEL[r.contentType],
             },
             { key: "category", label: "Category", render: (r) => r.category },
+            { key: "section", label: "Filed in", render: (r) => r.section },
             {
               key: "count",
               label: "Published count",
@@ -2441,10 +2386,6 @@ function TraxDetail({ view, section }: { view: ViewState; section: TimeSection |
           ]}
         />
       </div>
-      <p className="mt-3 text-[12px] text-rose">
-        Unavailable: completion and listen length are not recorded — plays,
-        likes and shares are the columns that could be real today.
-      </p>
     </div>
   );
 }

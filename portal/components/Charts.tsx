@@ -656,10 +656,13 @@ export function GroupedAxisChart({
   onSelect,
   valueLabels = false,
   angledLabels = false,
+  format = (n: number) => fmt(n),
 }: {
   labels: readonly string[];
   series: { name: string; tone: string; values: number[] }[];
   height?: number;
+  /** See AxisBarChart: how a figure reads on the axis, the bar and the tooltip. */
+  format?: (n: number) => string;
   /** When given, a group becomes clickable and drills one level down. */
   onSelect?: (index: number) => void;
   /**
@@ -709,7 +712,7 @@ export function GroupedAxisChart({
             <g key={i}>
               <line x1={padL} x2={W - padR} y1={y} y2={y} className="stroke-line" strokeDasharray="4 4" />
               <text x={padL - 10} y={y + 4} textAnchor="end" className="fill-faint" fontSize={12}>
-                {fmt((top * i) / STEPS)}
+                {format((top * i) / STEPS)}
               </text>
             </g>
           );
@@ -729,7 +732,7 @@ export function GroupedAxisChart({
             {series.map((s, j) => {
               const h = top ? (s.values[i] / top) * plotH : 0;
               const x = padL + slot * i + (slot - inner) / 2 + barW * j;
-              const text = fmt(s.values[i]);
+              const text = format(s.values[i]);
               /* ~5.2 units a glyph at fontSize 10, plus a glyph of air either
                  side, is where two grouped figures stop touching. */
               const fits = barW >= text.length * 5.2 + 6;
@@ -791,7 +794,7 @@ export function GroupedAxisChart({
           {series.map((s) => (
             <div key={s.name} className="flex justify-between gap-4 tabular-nums">
               <span className="text-muted">{s.name}</span>
-              <span className="font-bold">{fmt(s.values[hover])}</span>
+              <span className="font-bold">{format(s.values[hover])}</span>
             </div>
           ))}
         </div>
